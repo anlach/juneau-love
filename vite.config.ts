@@ -18,9 +18,9 @@ export default defineConfig({
 				fallback: '404.html'
 			}),
 
-			// In production the site is served from https://<username>.github.io/<repo-name>,
-			// so asset paths need the repo name as base. The GitHub Actions workflow sets
-			// BASE_PATH automatically; pass it manually for local production builds:
+			// In production the site is served from the root of the custom domain
+			// (juneau.love), so no base path is needed. Set BASE_PATH only if you revert
+			// to the anlach.github.io/juneau-love subpath (without a custom domain), e.g.:
 			//   BASE_PATH=/juneau-love npm run build
 			paths: {
 				base: (process.argv.includes('dev') ? '' : (process.env.BASE_PATH ?? '')) as

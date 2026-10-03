@@ -14,16 +14,20 @@ npm run dev
 # Local preview (base path /)
 npm run build
 
-# GitHub Pages-style build (base path /juneau-love)
-BASE_PATH=/juneau-love npm run build
+# Production build. The site is served from the root of the custom domain
+# (juneau.love), so no base path is needed.
+npm run build
 ```
 
 ## Deploy
 
 Push to `main` — the GitHub Actions workflow in `.github/workflows/deploy.yml` builds the site
-(with `BASE_PATH=/juneau-love`) and deploys it to GitHub Pages.
+and deploys it to GitHub Pages.
 
 In the repo settings, set **Pages → Build and deployment → Source** to **GitHub Actions**.
+
+The custom domain is declared in the `CNAME` file at the repo root; the old URL
+`https://anlach.github.io/juneau-love` redirects to `https://juneau.love`.
 
 ## Notes
 
