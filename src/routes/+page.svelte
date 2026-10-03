@@ -127,7 +127,7 @@
 	.rsvp {
 		width: 100%;
 		max-width: 640px;
-		margin-top: auto;
+		margin: auto auto 0;
 		padding: 3rem 1.5rem 6rem;
 		text-align: center;
 	}
