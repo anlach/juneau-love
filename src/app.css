@@ -1,0 +1,13 @@
+:root {
+	color-scheme: light;
+}
+
+body {
+	margin: 0;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+::selection {
+	background: rgba(183, 110, 121, 0.25);
+}
