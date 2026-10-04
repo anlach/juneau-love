@@ -2,6 +2,9 @@
 
 Wedding website. SvelteKit frontend, prerendered with `adapter-static` and deployed to GitHub Pages.
 
+## Coming Up
+Live updating photo slideshow and photo upload / gallery
+
 ## Development
 
 ```sh
