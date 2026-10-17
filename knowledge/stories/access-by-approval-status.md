@@ -3,7 +3,7 @@ type: user-story
 title: Access by approval status
 description: A signed-in user's screen is determined by their approval state — pending sees an awaiting screen, rejected sees a rejection screen, approved sees guest content (admins additionally the registrations page); sessions last via 1-day access + 1-year refresh tokens.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # Access by approval status
@@ -19,7 +19,7 @@ while I wait.
 1. The user gets a session the only two ways there are: clicking the
    email-confirmation link (at registration, step 1) or clicking a
    passcode login link (after approval, step 2 / any recovery). See
-   `knowledge/stories/sign-in-with-login-link.md`.
+   [Sign in with a login link](/sign-in-with-login-link.md).
 2. The layout fetches current-user state (own `users` row + permissions)
    and routes:
 
@@ -28,7 +28,7 @@ while I wait.
 | signed out | public landing page (register CTA + sign-in email form) |
 | confirmed, `pending` | "awaiting approval" screen: friendly message, display name, a "check status" button that re-fetches |
 | `rejected` | rejection screen: the registration was not approved; no content, no re-registration path |
-| `approved` | guest content. If `registrations:read` is present, the nav also shows the registrations page (see `knowledge/stories/review-registrations.md`) |
+| `approved` | guest content. If `registrations:read` is present, the nav also shows the registrations page (see [Review registrations](/review-registrations.md)) |
 
 3. A pending user who gets approved sees guest content on their next
    "check status" / refresh — the session they got from the
@@ -69,6 +69,7 @@ while I wait.
 
 ## Depends on
 
-- `knowledge/db/users.md`, `knowledge/db/user_permissions.md`
-- `knowledge/api/current-user-state.md`, `knowledge/api/client-auth.md`
-- `knowledge/stories/sign-in-with-login-link.md`
+- [users](../db/users.md), [user_permissions](../db/user_permissions.md)
+- [Current user state](../api/current-user-state.md),
+  [Client authentication](../api/client-auth.md)
+- [Sign in with a login link](/sign-in-with-login-link.md)

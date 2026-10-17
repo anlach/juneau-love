@@ -3,7 +3,7 @@ type: user-story
 title: Register as a guest
 description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # Register as a guest
@@ -27,9 +27,10 @@ site.
    session is established in this browser → the guest lands on the
    **"awaiting approval"** screen (no site content yet).
 5. An admin later approves (see
-   `knowledge/stories/review-registrations.md`) → the guest receives an
-   email with their **login link** (**step 2 of 2**, see
-   `knowledge/stories/sign-in-with-login-link.md`) → guest content.
+   [Review registrations](/review-registrations.md)) → the guest receives
+   an email with their **login link** (**step 2 of 2**, see
+   [Sign in with a login link](/sign-in-with-login-link.md)) → guest
+   content.
 
 ## Acceptance criteria
 
@@ -67,9 +68,11 @@ site.
 
 ## Depends on
 
-- `knowledge/db/users.md` (row-creation trigger, confirmation mirror,
+- [users](../db/users.md) (row-creation trigger, confirmation mirror,
   guard trigger, RLS)
-- `knowledge/api/client-auth.md` (signup + confirmation contract)
-- `knowledge/stories/sign-in-with-login-link.md` (what step 2 looks like)
-- `knowledge/stories/access-by-approval-status.md` (what the pending
-  screen is)
+- [Client authentication](../api/client-auth.md) (signup + confirmation
+  contract)
+- [Sign in with a login link](/sign-in-with-login-link.md) (what step 2
+  looks like)
+- [Access by approval status](/access-by-approval-status.md) (what the
+  pending screen is)

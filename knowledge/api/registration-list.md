@@ -3,13 +3,13 @@ type: api-endpoint
 title: List registrations (admin)
 description: PostgREST read of all users rows that feeds the admin registrations table — display name, email, verified indicator, registration date, approval state, newest first.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # List registrations
 
-Data source for the admin's registrations page
-(`knowledge/stories/review-registrations.md`).
+Data source for the admin's registrations page (see [Review
+registrations](../stories/review-registrations.md)).
 
 ## Call
 
@@ -26,8 +26,8 @@ supabase.from('users')
 ## Caller and authorization
 
 - Intended caller: signed-in admin. The FE gates the page on the
-  `registrations:read` permission (fetched via
-  `knowledge/api/current-user-state.md`).
+  `registrations:read` permission (fetched via [Current user
+  state](/current-user-state.md)).
 - **RLS, not the FE, is the boundary:** the `admin_read_all` policy gives
   the admin every row. A non-admin calling the same query silently gets
   only their own row — a SELECT blocked by RLS returns a **filtered
@@ -43,7 +43,8 @@ supabase.from('users')
   the Approve action unavailable (the function enforces the same rule).
 - **Ordering:** `created_at` descending (most recent registration first).
 - **Freshness:** the FE re-fetches after every approve/reject
-  (`knowledge/api/registration-decision.md`) and on page focus.
+  ([registration-decision](/registration-decision.md)) and on page
+  focus.
 - **Errors:** none expected from the DB for a valid session. Malformed
   requests surface as PostgREST 4xx. A signed-out caller gets zero rows
   (no anon policy).

@@ -3,7 +3,7 @@ type: user-story
 title: Sign in with a login link (passcode)
 description: An approved guest gets a session by clicking a passcode link in an email — valid 7 days, unlimited uses, any device; a lost or expired session is recovered by entering the guest's email to get a fresh link.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # Sign in with a login link
@@ -16,8 +16,8 @@ recovered without contacting anyone.
 ## Flow — first login (step 2 of 2)
 
 1. Prerequisite: the guest already confirmed their email at registration
-   (step 1 — see `knowledge/stories/register-as-guest.md`) and an admin
-   approved them.
+   (step 1 — see [Register as a guest](/register-as-guest.md)) and an
+   admin approved them.
 2. The approval email arrives with the login link (passcode in the URL).
 3. Click → `https://juneau.love/login?code=...` → the page redeems the
    code via the `login-with-passcode` edge function → a Supabase session
@@ -82,7 +82,8 @@ recovered without contacting anyone.
 
 ## Depends on
 
-- `knowledge/db/login_passcodes.md`
-- `knowledge/api/login-with-passcode.md`,
-  `knowledge/api/send-login-link.md`, `knowledge/api/client-auth.md`
-- `knowledge/stories/register-as-guest.md` (step 1)
+- [login_passcodes](../db/login_passcodes.md)
+- [login-with-passcode](../api/login-with-passcode.md),
+  [send-login-link](../api/send-login-link.md),
+  [Client authentication](../api/client-auth.md)
+- [Register as a guest](/register-as-guest.md) (step 1)

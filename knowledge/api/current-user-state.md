@@ -3,7 +3,7 @@ type: api-endpoint
 title: Current user state (own status + permissions)
 description: "The two self-queries the layout runs after a session exists: the user's own users row (approval status) and their effective permission names from the user_permissions view."
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # Current user state
@@ -25,8 +25,8 @@ const { data } = await supabase
 
 - RLS serves exactly the caller's own row (`users_read_own`).
 - `status` drives the screen: `pending` → awaiting-approval screen,
-  `rejected` → rejection screen, `approved` → guest content
-  (`knowledge/stories/access-by-approval-status.md`).
+  `rejected` → rejection screen, `approved` → guest content (see [Access
+  by approval status](../stories/access-by-approval-status.md)).
 - `data === null` is a data anomaly (auth user without a profile row —
   e.g. a broken manual insert): show an error state, do not guess.
 

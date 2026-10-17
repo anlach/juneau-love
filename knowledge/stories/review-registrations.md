@@ -3,7 +3,7 @@ type: user-story
 title: Review registrations (admin)
 description: The admin opens a registrations page listing every registration with its verification and approval state, and can approve (verified emails only) or reject each one; approving emails the guest their login link.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # Review registrations
@@ -17,9 +17,10 @@ approve or reject each one,
 ## Flow
 
 1. Admin signs in (via the same passcode-link flow as everyone else —
-   see `knowledge/stories/sign-in-with-login-link.md`); the layout
-   fetches their state and sees the `registrations:read` permission →
-   the registrations page appears in the nav (no other user can see it).
+   see [Sign in with a login link](/sign-in-with-login-link.md)); the
+   layout fetches their state and sees the `registrations:read`
+   permission → the registrations page appears in the nav (no other
+   user can see it).
 2. The page loads all registrations, newest first, each row showing
    display name, email, `created_at`, a **verified indicator**
    (`email_confirmed_at` set or not), and current status
@@ -60,7 +61,7 @@ approve or reject each one,
 
 - **No self-service admin.** There is no UI or API that grants the admin
   role. The first admin is bootstrapped out-of-band via SQL (steps in
-  `knowledge/db/users.md`); any further admin must be granted by an
+  [users](../db/users.md)); any further admin must be granted by an
   existing admin the same way. (Open question: an admin-promote action in
   the UI, with last-admin protection, later.)
 - **An admin is also a guest:** the bootstrap leaves the admin holding
@@ -80,8 +81,9 @@ approve or reject each one,
 
 ## Depends on
 
-- `knowledge/db/users.md`, `knowledge/db/login_passcodes.md`,
-  `knowledge/db/user_roles.md`, `knowledge/db/role_permissions.md`
-- `knowledge/api/registration-list.md`,
-  `knowledge/api/registration-decision.md`,
-  `knowledge/api/current-user-state.md`
+- [users](../db/users.md), [login_passcodes](../db/login_passcodes.md),
+  [user_roles](../db/user_roles.md),
+  [role_permissions](../db/role_permissions.md)
+- [List registrations](../api/registration-list.md),
+  [registration-decision](../api/registration-decision.md),
+  [Current user state](../api/current-user-state.md)

@@ -3,16 +3,16 @@ type: edge-function
 title: registration-decision (approve / reject + invite email)
 description: Admin-only edge function that approves or rejects a registration; approving requires a verified email and issues a fresh login passcode plus the invite email, rejecting kills any unredeemed link.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # registration-decision
 
-The write side of the admin registrations page
-(`knowledge/stories/review-registrations.md`). Approval must also issue a
-passcode and send an email, so this is an **edge function** (service
-role) rather than a PostgREST update — the `users` table has no client
-write path for `status` at all.
+The write side of the admin registrations page (see [Review
+registrations](../stories/review-registrations.md)). Approval must also
+issue a passcode and send an email, so this is an **edge function**
+(service role) rather than a PostgREST update — the `users` table has no
+client write path for `status` at all.
 
 ## Contract
 
@@ -32,8 +32,10 @@ Single DB transaction, then email:
    [user_roles](../db/user_roles.md) using the JWT's `sub`). 403
    otherwise.
 2. Load the target [users](../db/users.md) row. 404 if unknown.
-3. Validate the transition against the status-transition matrix. 409 if
-   illegal (e.g. re-deciding an already-decided row).
+3. Validate the transition against the status-transition matrix
+   ([users](../db/users.md), Status transitions). 409 if illegal (e.g.
+   approving an already-approved row, or anything back to `pending`);
+   re-deciding between `approved` and `rejected` is **legal**.
 4. **Verify-then-approve gate (approve only):** require
    `users.email_confirmed_at IS NOT NULL` — an admin may only approve a
    verified email (gate 1 must pass before gate 2). 409

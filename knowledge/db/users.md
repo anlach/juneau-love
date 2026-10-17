@@ -3,7 +3,7 @@ type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password; the login credential (passcode) lives in login_passcodes, and email-verification state is mirrored from auth.users.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # users
@@ -64,7 +64,8 @@ admin); there is no client write path for `status`.
 
 Approving additionally issues a fresh [login_passcodes](/login_passcodes.md)
 row and emails the guest their login link; rejecting deletes it (both done
-by the edge function — see `knowledge/api/registration-decision.md`).
+by the edge function — see
+[registration-decision](../api/registration-decision.md)).
 
 ## Helper function
 
@@ -109,16 +110,18 @@ $$;
   table owner, so it needs no RLS policy of its own (the guard's owner
   branch covers it).
 - **Self read:** a signed-in user reads their own row to learn their
-  approval state (`knowledge/api/current-user-state.md`).
+  approval state ([Current user state](../api/current-user-state.md)).
 - **Admin read:** the admin reads all rows for the registrations page
-  (`knowledge/api/registration-list.md`). Note the passcode is *not* on
-  this table precisely so the admin's list never exposes login credentials.
+  ([List registrations](../api/registration-list.md)). Note the passcode
+  is *not* on this table precisely so the admin's list never exposes
+  login credentials.
 - **Status changes — edge function only.** The `registration-decision`
   function (service role) is the sole writer of `status`: it validates the
   caller is an admin, applies the transition, and — on approve — upserts a
   fresh [login_passcodes](/login_passcodes.md) row and sends the invite
-  email; on reject it deletes the passcode row so any unredeemed link dies
-  immediately. See `knowledge/api/registration-decision.md`.
+  email; on reject it deletes the passcode row so any unredeemed link
+  dies immediately. See
+  [registration-decision](../api/registration-decision.md).
 - **First-admin bootstrap (out-of-band, no UI path grants admin).** Run as
   the `postgres` role (Supabase SQL editor or migration):
   1. Create the auth user (dashboard: Auth → Users → Add user). The trigger
@@ -157,7 +160,8 @@ admin.
 
 The UPDATE policy is deliberately coarse (a user can touch their own row);
 the `BEFORE UPDATE` guard trigger enforces the fine rules by **writer
-class** (detected via `current_setting('role')` and `auth.uid()`):
+class** (detected via `current_user` — `service_role` for edge functions,
+`postgres` for the owner console — and `auth.uid()`):
 
 - **`service_role` DB role** (edge functions): may change `status` only,
   and the transition must be allowed (table above).

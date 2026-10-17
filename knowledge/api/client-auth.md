@@ -3,7 +3,7 @@ type: auth-flow
 title: Client authentication (passwordless, passcode links)
 description: "No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the passcode login link after approval. The link is redeemed by an edge function for a Supabase session (1-day access token, 1-year refresh token, auto-refreshed and persisted by supabase-js)."
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # Client authentication
@@ -110,7 +110,8 @@ link replaces it.**
 ## After auth
 
 The layout fetches current-user state (own status + permissions) and
-routes to the right screen (`knowledge/stories/access-by-approval-status.md`).
+routes to the right screen ([Access by approval
+status](../stories/access-by-approval-status.md)).
 
 ## Project setup requirements
 

@@ -3,7 +3,7 @@ type: db-table
 title: user_roles
 description: Join table assigning roles to users. The guest role is written only by the users status-sync trigger; the admin role only by out-of-band bootstrap. No client DML.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # user_roles
@@ -43,7 +43,7 @@ create table public.user_roles (
     see the bootstrap steps in [users](/users.md).
 - **Reads:**
   - A user reads their own role rows to know what they are
-    (`knowledge/api/current-user-state.md`).
+    ([Current user state](../api/current-user-state.md)).
   - The admin reads all assignments (e.g. to display a user's role on the
     registrations page).
   - RLS itself reads this table via the `SECURITY DEFINER`

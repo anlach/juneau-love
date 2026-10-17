@@ -3,7 +3,7 @@ type: db-table
 title: permissions
 description: Named RBAC permissions, namespaced as area:action. Seeded with the three registrations permissions; all three belong to the admin role in v1.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # permissions
@@ -49,8 +49,8 @@ insert into public.permissions (name, description) values
 - **Naming convention:** `area:action`. Add new permissions per area
   (e.g. future `rsvp:create`) rather than broad catch-alls.
 - **v1 gap to note:** the `guest` role has **no** permissions in v1.
-  Guest-facing access is gated on approval state (see
-  `knowledge/stories/access-by-approval-status.md`); permissions exist
+  Guest-facing access is gated on approval state (see [Access by approval
+  status](../stories/access-by-approval-status.md)); permissions exist
   today only to express admin capabilities. Future guest features should
   get real permissions.
 

@@ -3,7 +3,7 @@ type: db-table
 title: user_permissions
 description: Read-only view resolving each user's effective permission names (user_roles x role_permissions x permissions). The FE queries it for the current user to gate the UI.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # user_permissions
@@ -11,7 +11,7 @@ generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
 A **view** (not a table) that flattens the RBAC joins into one row per
 (user, permission). It is the single query the FE uses to build the
 current user's permission set
-(`knowledge/api/current-user-state.md`).
+([Current user state](../api/current-user-state.md)).
 
 # Schema
 
@@ -41,8 +41,9 @@ join public.permissions p       on p.id = rp.permission_id;
   any user's effective permissions. Intended (useful on the registrations
   page); do not widen this further.
 - **v1 gap:** an approved guest's set is **empty** (the guest role has no
-  permissions). Guest-facing gating keys off approval state, not
-  permissions; see `knowledge/stories/access-by-approval-status.md`.
+  permissions); guest-facing gating keys off approval state, not
+  permissions — see [Access by approval
+  status](../stories/access-by-approval-status.md).
 - **No independent RLS on the view:** it is a security invoker, so the
   base tables' RLS ([user_roles](/user_roles.md),
   [role_permissions](/role_permissions.md), [permissions](/permissions.md))

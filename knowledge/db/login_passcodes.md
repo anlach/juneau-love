@@ -3,15 +3,16 @@ type: db-table
 title: login_passcodes
 description: One row per user holding the current login passcode — a 7-day, unlimited-use bearer credential carried in an emailed link. Written and read only by edge functions (service role); no client can ever see it.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:05:27Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # login_passcodes
 
 The user's **login passcode** — the bearer credential carried in the
 emailed link that establishes a session
-(`knowledge/api/login-with-passcode.md`). One row per user; every
-(re)issuance replaces the row, so only the most recent link ever works.
+([login-with-passcode](../api/login-with-passcode.md)). One row per user;
+every (re)issuance replaces the row, so only the most recent link ever
+works.
 
 The passcode is a credential, so it lives in its own table rather than on
 [users](/users.md): an admin reading all `users` rows for the

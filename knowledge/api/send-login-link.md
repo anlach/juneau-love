@@ -3,14 +3,14 @@ type: edge-function
 title: send-login-link (sign in / resend link)
 description: Publicly invokable edge function that emails a fresh passcode login link to a given email address, but only if the user is registered and approved; 10-minute cooldown per user.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:05:27Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
 
 # send-login-link
 
 The site's **"sign in"** action and its recovery path: enter an email,
-get (or get resent) the passcode link
-(`knowledge/stories/sign-in-with-login-link.md`).
+get (or get resent) the passcode link (see [Sign in with a login
+link](../stories/sign-in-with-login-link.md)).
 
 ## Contract
 
@@ -28,9 +28,11 @@ Content-Type: application/json
    - found but `status != 'approved'` → 200 `{ sent: false,
      reason: "not_approved" }` (the FE shows "you're registered — approval
      is pending" or the rejection message). Pending users get **no** link:
-     they can't log in yet, and this endpoint must not leak which pending
-     emails exist any faster than the `not_found` case — both are
-     answered from the same function.
+     they can't log in yet. The `not_found` / `not_approved` distinction
+     is deliberate and accepted: it lets the FE say "not registered yet"
+     vs "approval pending" (see [Sign in with a login
+     link](../stories/sign-in-with-login-link.md)); email enumeration is
+     not a threat at this site's scale.
    - approved → cooldown check: if the user's
      [login_passcodes](../db/login_passcodes.md) `sent_at` is within the
      last 10 minutes → 429 `{ retry_after_seconds }`.
