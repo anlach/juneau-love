@@ -1,9 +1,9 @@
 ---
 type: api-endpoint
 title: List registrations (admin)
-description: PostgREST read of all users rows that feeds the admin registrations table — display name, email, registration date, approval state, newest first.
+description: PostgREST read of all users rows that feeds the admin registrations table — display name, email, verified indicator, registration date, approval state, newest first.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
 ---
 
 # List registrations
@@ -16,7 +16,7 @@ Data source for the admin's registrations page
 ```js
 // all registrations, newest first
 supabase.from('users')
-  .select('id, email, display_name, status, created_at')
+  .select('id, email, display_name, email_confirmed_at, status, created_at')
   .order('created_at', { ascending: false });
 
 // optional pending-only filter
@@ -36,8 +36,11 @@ supabase.from('users')
 
 ## Expectations
 
-- **Result:** `Array<{ id, email, display_name, status, created_at }>`;
-  `status ∈ { pending, approved, rejected }`.
+- **Result:** `Array<{ id, email, display_name, email_confirmed_at,
+  status, created_at }>`; `status ∈ { pending, approved, rejected }`.
+  `email_confirmed_at === null` means the guest has not clicked the
+  confirmation link yet — the FE renders a "not verified" state and keeps
+  the Approve action unavailable (the function enforces the same rule).
 - **Ordering:** `created_at` descending (most recent registration first).
 - **Freshness:** the FE re-fetches after every approve/reject
   (`knowledge/api/registration-decision.md`) and on page focus.

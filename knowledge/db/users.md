@@ -1,9 +1,9 @@
 ---
 type: db-table
 title: users
-description: One row per registered site user — the registration record with approval status. Credentials live in Supabase Auth (auth.users); this table holds the profile and approval state the site uses for authorization.
+description: One row per registered site user — the registration record with approval status. Users have no password; the login credential (passcode) lives in login_passcodes, and email-verification state is mirrored from auth.users.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
 ---
 
 # users
@@ -11,8 +11,16 @@ generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
 One row per registered site user. This is the **registration record** that
 backs the registration-review flow: registering creates a row in `pending`,
 an admin moves it to `approved` or `rejected`, and the approval state drives
-both the user-facing screens and role assignment. Credentials and sessions
-live in Supabase Auth (`auth.users`); this table is the public-facing profile.
+both the user-facing screens and role assignment. The auth account lives in
+Supabase Auth (`auth.users`); the login credential (passcode) lives in
+[login_passcodes](/login_passcodes.md); this table is the public-facing
+profile and approval state.
+
+Before a guest gets access there are **two gates**: email verification
+(Supabase Auth's confirmation email — automated; proves the guest controls
+the address) and admin approval (`status` — the human vouching). The
+verification state is mirrored here as `email_confirmed_at`; approval is
+`status`. Approval is blocked until the email is verified.
 
 # Schema
 
@@ -21,7 +29,8 @@ live in Supabase Auth (`auth.users`); this table is the public-facing profile.
 | `id` | `uuid` PK | `references auth.users(id) on delete cascade`. For a signed-in user this equals `auth.uid()`. |
 | `email` | `text` NOT NULL UNIQUE | Denormalized from `auth.users.email`. Stored here because clients cannot read `auth.users`; the admin's registrations table renders emails from this column. |
 | `display_name` | `text` NOT NULL | Name shown to the admin and on the site. Set at registration, editable by the user themselves only. |
-| `status` | `text` NOT NULL DEFAULT `'pending'` | CHECK `in ('pending','approved','rejected')`. The approval state; the only column an admin may change on other users' rows. |
+| `email_confirmed_at` | `timestamptz` | Mirrored from `auth.users.email_confirmed_at` by a trigger when the guest clicks the confirmation link. NULL = not verified yet. Drives the "verified" indicator on the admin's registrations table; `registration-decision` refuses to approve while NULL. |
+| `status` | `text` NOT NULL DEFAULT `'pending'` | CHECK `in ('pending','approved','rejected')`. The approval state; the only column ever changed by an admin, and only through the `registration-decision` edge function (never by a client). |
 | `created_at` | `timestamptz` NOT NULL DEFAULT `now()` | Registration time. |
 | `updated_at` | `timestamptz` NOT NULL DEFAULT `now()` | Set to `now()` by the guard trigger on every allowed update. |
 
@@ -32,6 +41,7 @@ create table public.users (
   id uuid primary key references auth.users (id) on delete cascade,
   email text not null unique,
   display_name text not null,
+  email_confirmed_at timestamptz,
   status text not null default 'pending'
     check (status in ('pending','approved','rejected')),
   created_at timestamptz not null default now(),
@@ -42,13 +52,19 @@ create table public.users (
 ## Status transitions
 
 Enforced by the `guard_user_row` trigger; anything else raises an error.
-Only the `admin` role (via [user_roles](/user_roles.md)) may change `status`.
+Status changes arrive **only via the `registration-decision` edge
+function** (service role, after it has verified the human caller is an
+admin); there is no client write path for `status`.
 
 | from \ to | `pending` | `approved` | `rejected` |
 |---|---|---|---|
 | `pending` | — | admin | admin |
 | `approved` | ✗ | — | admin |
 | `rejected` | ✗ | admin (re-approve) | — |
+
+Approving additionally issues a fresh [login_passcodes](/login_passcodes.md)
+row and emails the guest their login link; rejecting deletes it (both done
+by the edge function — see `knowledge/api/registration-decision.md`).
 
 ## Helper function
 
@@ -86,10 +102,23 @@ $$;
   - `status → 'rejected'`: delete the `(user, guest)` role row.
   It runs in the same transaction as the update, so approval and role
   grant/revoke cannot diverge.
+- **Email-confirmation mirror — auth trigger, `SECURITY DEFINER`.** A
+  trigger on `auth.users` (AFTER UPDATE OF `email_confirmed_at`) copies the
+  confirmation timestamp onto this row so the admin can see who is verified
+  and the decision function can enforce verify-then-approve. Runs as the
+  table owner, so it needs no RLS policy of its own (the guard's owner
+  branch covers it).
 - **Self read:** a signed-in user reads their own row to learn their
   approval state (`knowledge/api/current-user-state.md`).
 - **Admin read:** the admin reads all rows for the registrations page
-  (`knowledge/api/registration-list.md`).
+  (`knowledge/api/registration-list.md`). Note the passcode is *not* on
+  this table precisely so the admin's list never exposes login credentials.
+- **Status changes — edge function only.** The `registration-decision`
+  function (service role) is the sole writer of `status`: it validates the
+  caller is an admin, applies the transition, and — on approve — upserts a
+  fresh [login_passcodes](/login_passcodes.md) row and sends the invite
+  email; on reject it deletes the passcode row so any unredeemed link dies
+  immediately. See `knowledge/api/registration-decision.md`.
 - **First-admin bootstrap (out-of-band, no UI path grants admin).** Run as
   the `postgres` role (Supabase SQL editor or migration):
   1. Create the auth user (dashboard: Auth → Users → Add user). The trigger
@@ -101,6 +130,9 @@ $$;
      where u.email = '<admin>' and r.name = 'admin';`
   An admin therefore holds **both** `guest` and `admin` roles. Bootstrap SQL
   runs as the table owner and bypasses RLS by design (see RLS below).
+  4. The admin has no login passcode yet: their first login link comes
+     from the normal sign-in page (enter their email →
+     `send-login-link` serves any approved user), no special path.
 - **Email changes are not supported in v1.** If an auth email is changed
   out-of-band, `users.email` goes stale; keep the two in sync manually.
 
@@ -115,18 +147,29 @@ owner's, so this is accepted.
 | `users_read_own` | SELECT | `using (id = auth.uid())` |
 | `admin_read_all` | SELECT | `using (public.has_role('admin'))` |
 | `users_insert_own` | INSERT | `with check (id = auth.uid())` — serves the auth trigger; the guard below keeps a manual self-insert harmless |
-| `admin_update_status` | UPDATE | `using (public.has_role('admin')) with check (public.has_role('admin'))` |
-| `users_update_own` | UPDATE | `using (id = auth.uid()) with check (id = auth.uid())` |
+| `users_update_own` | UPDATE | `using (id = auth.uid()) with check (id = auth.uid())` — for `display_name`; the guard below blocks any other column |
 
 No DELETE policy, no policy for `anon` (an unauthenticated session sees
-zero rows).
+zero rows). There is deliberately **no** UPDATE policy for `status`: status
+writes flow only through the `registration-decision` edge function
+(service role bypasses RLS), which has already verified the caller is an
+admin.
 
-The UPDATE policies are deliberately coarse; the `BEFORE UPDATE` guard
-trigger enforces the fine rules:
+The UPDATE policy is deliberately coarse (a user can touch their own row);
+the `BEFORE UPDATE` guard trigger enforces the fine rules by **writer
+class** (detected via `current_setting('role')` and `auth.uid()`):
 
-- `status` change → caller must have the admin role and the transition must
-  be allowed (table above).
-- `display_name` change → self only (`auth.uid() = user_id`).
-- `updated_at` → forced to `now()`.
-- On INSERT → `status` forced to `'pending'`, so a hand-crafted self-insert
-  can never skip review.
+- **`service_role` DB role** (edge functions): may change `status` only,
+  and the transition must be allowed (table above).
+- **`postgres` role** (our own `SECURITY DEFINER` sync triggers, plus the
+  owner console / migrations / bootstrap): unrestricted — the accepted
+  owner bypass; the sync triggers only ever touch their own column.
+- **Self** (`authenticated`, `auth.uid() = user_id`): may change
+  `display_name` only. A hand-crafted self-update of `status` or
+  `email_confirmed_at` is rejected here even though RLS allows the row —
+  this is what stops a user from claiming their own verification.
+- Anything else → raise.
+- Always: `updated_at` forced to `now()`.
+- On INSERT → `status` forced to `'pending'` and `email_confirmed_at`
+  forced to `null`, so a hand-crafted self-insert can never skip review or
+  claim verification.

@@ -1,9 +1,9 @@
 ---
 type: user-story
 title: Access by approval status
-description: A signed-in user's screen is determined by their approval state — pending sees an awaiting screen, rejected sees a rejection screen, approved sees guest content (admins additionally the registrations page).
+description: A signed-in user's screen is determined by their approval state — pending sees an awaiting screen, rejected sees a rejection screen, approved sees guest content (admins additionally the registrations page); sessions last via 1-day access + 1-year refresh tokens.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
 ---
 
 # Access by approval status
@@ -16,25 +16,30 @@ while I wait.
 
 ## Flow
 
-1. User signs in (any status can sign in — auth and approval are
-   separate).
+1. The user gets a session the only two ways there are: clicking the
+   email-confirmation link (at registration, step 1) or clicking a
+   passcode login link (after approval, step 2 / any recovery). See
+   `knowledge/stories/sign-in-with-login-link.md`.
 2. The layout fetches current-user state (own `users` row + permissions)
    and routes:
 
 | Status | Screen |
 |---|---|
-| signed out | public landing page (registration CTA) |
-| `pending` | "awaiting approval" screen: friendly message, display name, a "check status" button that re-fetches |
+| signed out | public landing page (register CTA + sign-in email form) |
+| confirmed, `pending` | "awaiting approval" screen: friendly message, display name, a "check status" button that re-fetches |
 | `rejected` | rejection screen: the registration was not approved; no content, no re-registration path |
 | `approved` | guest content. If `registrations:read` is present, the nav also shows the registrations page (see `knowledge/stories/review-registrations.md`) |
 
-3. A pending user who gets approved sees guest content after
-   sign-out/sign-in or a refresh (v1: no push/poll).
+3. A pending user who gets approved sees guest content on their next
+   "check status" / refresh — the session they got from the
+   email-confirmation step already works, so on *that browser* approval
+   is immediate; on any **other** device the login link is still the way
+   in. (v1: no push/poll.)
 
 ## Acceptance criteria
 
 - [ ] The correct screen shows for each status, including a brand-new
-      (pending) and an admin (approved + permissions) account.
+      (confirmed, pending) and an admin (approved + permissions) account.
 - [ ] No user-specific or approval-specific data appears in prerendered
       HTML — the site is `adapter-static`, so every such screen renders
       client-side after the session/state fetch.
@@ -52,12 +57,18 @@ while I wait.
 - **v1 guest permissions are empty:** guest-content access is keyed on
   `status = 'approved'`, while admin capabilities are keyed on
   permissions (`registrations:*`).
+- **Sessions:** 1-day access token, 1-year refresh token; supabase-js
+  auto-refreshes and persists in localStorage. A returning visitor with a
+  valid refresh token needs no link at all — the passcode link is the
+  re-authentication path, not the session mechanism.
 - **No auto-refresh in v1:** the pending screen offers a manual
   "check status" fetch; background polling is an open question.
-- **Email notifications on decision are out of scope** (would need an
-  edge function with the service role).
+- **Notifications:** approval emails the guest their login link (in
+  scope — the `registration-decision` function). Rejection sends nothing
+  in v1 (open question).
 
 ## Depends on
 
 - `knowledge/db/users.md`, `knowledge/db/user_permissions.md`
 - `knowledge/api/current-user-state.md`, `knowledge/api/client-auth.md`
+- `knowledge/stories/sign-in-with-login-link.md`

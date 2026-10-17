@@ -1,53 +1,73 @@
 ---
-type: api-endpoint
-title: Approve / reject a registration
-description: Admin sets a user's status to approved or rejected via a PostgREST update; DB triggers enforce the transition and grant or revoke the guest role in the same transaction.
+type: edge-function
+title: registration-decision (approve / reject + invite email)
+description: Admin-only edge function that approves or rejects a registration; approving requires a verified email and issues a fresh login passcode plus the invite email, rejecting kills any unredeemed link.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
 ---
 
-# Approve / reject a registration
+# registration-decision
 
-The admin's decision action on the registrations page
-(`knowledge/stories/review-registrations.md`).
+The write side of the admin registrations page
+(`knowledge/stories/review-registrations.md`). Approval must also issue a
+passcode and send an email, so this is an **edge function** (service
+role) rather than a PostgREST update — the `users` table has no client
+write path for `status` at all.
 
-## Call
+## Contract
 
-```js
-supabase.from('users')
-  .update({ status: 'approved' })   // or 'rejected'
-  .eq('id', targetUserId);
+```
+POST /functions/v1/registration-decision
+Authorization: Bearer <admin access token>
+Content-Type: application/json
+
+{ "target_user_id": "<uuid>", "decision": "approve" | "reject" }
 ```
 
-Send **only** `status`; the guard trigger forces `updated_at = now()`.
+## Behavior
 
-## Caller and authorization
+Single DB transaction, then email:
 
-- FE gate: `registrations:approve` or `registrations:reject` permission.
-- DB enforcement (two layers, see `knowledge/db/users.md`):
-  - RLS: only the admin role may UPDATE other users' rows.
-  - Trigger: the transition must be legal (`pending→approved`,
-    `pending→rejected`, `approved→rejected`, `rejected→approved`);
-    anything else — including a non-admin changing any status — raises.
+1. Verify the caller has the `admin` role (service-role query of
+   [user_roles](../db/user_roles.md) using the JWT's `sub`). 403
+   otherwise.
+2. Load the target [users](../db/users.md) row. 404 if unknown.
+3. Validate the transition against the status-transition matrix. 409 if
+   illegal (e.g. re-deciding an already-decided row).
+4. **Verify-then-approve gate (approve only):** require
+   `users.email_confirmed_at IS NOT NULL` — an admin may only approve a
+   verified email (gate 1 must pass before gate 2). 409
+   `{ error: "email_not_confirmed" }` otherwise. Reject is always allowed —
+   the admin can clean up unverified rows.
+5. `UPDATE users SET status = ...` — the sync trigger grants/revokes the
+   `guest` role atomically in the same transaction.
+6. **Approve:** upsert a fresh [login_passcodes](../db/login_passcodes.md)
+   row (new 7-day passcode) and send the invite email with the link
+   `https://juneau.love/login?code=<passcode>`.
+   **Reject:** delete the user's `login_passcodes` row — an unredeemed
+   link dies immediately.
+7. Return the updated row + whether the email went out.
 
-## Side effects (same transaction)
+## Responses
 
-- `approved` → the sync trigger upserts the user's `guest` role row.
-- `rejected` → the sync trigger deletes the user's `guest` role row.
+| Status | Body | When |
+|---|---|---|
+| 200 | `{ user: { id, email, display_name, status, created_at }, email_sent: true \| false }` | decision applied |
+| 403 | `{ error: "not_admin" }` | caller lacks the admin role |
+| 404 | `{ error: "not_found" }` | unknown `target_user_id` |
+| 409 | `{ error: "invalid_transition" }` | illegal status change |
+| 409 | `{ error: "email_not_confirmed" }` | approving an email that was never confirmed |
 
-So the decision and the capability change are atomic; there is no window
-where an approved user lacks the role (or vice versa).
+Email failure **after** the DB commit still returns 200 with
+`email_sent: false` (the decision stands; the guest — or a future
+"resend" button — can trigger `send-login-link`). The FE re-fetches the
+registrations list after every call.
 
-## Expectations and errors
+## Enforcement layers
 
-- **Success:** 204/200. The FE re-fetches the registrations list
-  (`knowledge/api/registration-list.md`); the row's status flips and, for
-  approvals, the guest's next sign-in (or refresh) yields guest access.
-- **No-op:** deciding on an already-decided row is harmless
-  (same-status update, no role churn) — safe against double-clicks.
-- **Unknown `targetUserId`:** 200 with zero rows affected. The FE checks
-  the response length and re-fetches the list.
-- **Invalid transition or non-admin:** PostgREST 400 carrying the
-  trigger's message (e.g. `only an admin may change registration status`).
-  The FE shows the message and re-fetches; it should not happen if the
-  UI only offers legal actions.
+- **Function:** caller is admin; transition is legal; verify-then-approve
+  gate; email/passcode side effects happen exactly once per decision.
+- **DB:** the guard trigger re-enforces the transition matrix for
+  `status` writers (service role allowed), and the sync trigger keeps
+  roles consistent — so the DB is correct even if the function logic
+  regresses.

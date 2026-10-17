@@ -1,60 +1,75 @@
 ---
 type: user-story
 title: Register as a guest
-description: A guest registers with email, display name, and password; the registration starts in pending state and waits for an admin decision.
+description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:15:03Z }
 ---
 
 # Register as a guest
 
 **As a** guest of the wedding,
-**I want to** register my email and display name with a password,
-**so that** I can be approved and get access to the site.
+**I want to** register my email and display name (no password),
+**so that** I can confirm my address, be approved, and get access to the
+site.
 
 ## Flow
 
 1. Guest opens the site (public landing is visible without an account)
    and chooses "register".
-2. Form collects **email, display name, password**; the FE validates
-   (non-empty, email shape, ≥6 chars) before calling the API.
+2. Form collects **email and display name** (there is no password); the
+   FE validates (non-empty, email shape) before calling the API.
 3. `signUp` succeeds → the DB trigger creates the registration row in
-   `pending` → with a live session, the guest lands on the
+   `pending` → GoTrue emails a **confirm-your-email** link (**step 1 of 2
+   for initial login**). No session yet; the FE shows a
+   "check your email to confirm your address" screen.
+4. Guest clicks the confirmation link → the account is confirmed and a
+   session is established in this browser → the guest lands on the
    **"awaiting approval"** screen (no site content yet).
-4. An admin later approves (see `knowledge/stories/review-registrations.md`);
-   the guest sees guest content on their next sign-in/refresh.
+5. An admin later approves (see
+   `knowledge/stories/review-registrations.md`) → the guest receives an
+   email with their **login link** (**step 2 of 2**, see
+   `knowledge/stories/sign-in-with-login-link.md`) → guest content.
 
 ## Acceptance criteria
 
-- [ ] A new registration always lands in `pending` — no path (UI or
-      hand-crafted request) can create a row in any other state.
-- [ ] The guest is signed in immediately after registering (email
-      confirmation is disabled in the Supabase project).
-- [ ] A pending guest sees only the awaiting-approval screen, with their
-      display name shown.
+- [ ] A new registration always lands in `pending` and unconfirmed — no
+      path (UI or hand-crafted request) can create a row in any other
+      state or claim a verification timestamp.
+- [ ] Email confirmation is on: **no session exists before the guest
+      clicks the confirmation link**; after clicking it, the guest is
+      signed in and sees the awaiting-approval screen with their display
+      name.
+- [ ] Registration works with no password anywhere in the flow.
 - [ ] Re-registering with an existing email fails with a friendly
       "account already exists — sign in" message; the guest signs in
       instead (a rejected account leads to the rejection screen).
-- [ ] The guest role is **not** held before approval (verified in the DB:
-      no `user_roles` row until the admin approves).
+- [ ] The guest role is **not** held and **no login passcode exists**
+      before approval (verified in the DB).
 
 ## Business rules
 
 - **One registration per email** — enforced twice: Supabase Auth rejects
   duplicate signups, and `users.email` is unique.
-- **Review is the trust gate, not email ownership.** Email confirmation
-  is intentionally off in v1; the admin's approval is what makes a guest
-  real. (Open question: require confirmation later if registrations are
-  abused.)
-- **Registration data is minimal:** email + display name only in v1.
+- **Two gates before access:** (1) email verification — automated, via
+  Supabase's confirmation email, proving the guest controls the address;
+  (2) admin approval — the human vouching. Both must pass; the
+  `registration-decision` function hard-refuses to approve an
+  unverified email, and no login link is ever sent before approval.
+- **Registration data is minimal:** email + display name, no password —
+  passwordless by design, not a v1 limitation.
 - **A rejected user cannot re-register** (their auth account exists);
-  only an admin can re-approve them.
-- No email confirmation on success, and no notification to the guest on
-  approve/reject (open question — needs an edge function later).
+  only an admin can re-approve them. Rejection also deletes any
+  unredeemed login passcode.
+- The confirmation email uses Supabase's auth email template; the
+  post-approval email is our own invite (edge function, email provider
+  TBD).
 
 ## Depends on
 
-- `knowledge/db/users.md` (row creation trigger, guard trigger, RLS)
-- `knowledge/api/client-auth.md` (signup contract)
+- `knowledge/db/users.md` (row-creation trigger, confirmation mirror,
+  guard trigger, RLS)
+- `knowledge/api/client-auth.md` (signup + confirmation contract)
+- `knowledge/stories/sign-in-with-login-link.md` (what step 2 looks like)
 - `knowledge/stories/access-by-approval-status.md` (what the pending
   screen is)
