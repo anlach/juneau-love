@@ -1,5 +1,6 @@
 # db-table
 
+* [assets](assets.md) - Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row.
 * [login_passcodes](login_passcodes.md) - One row per user holding the current login passcode — a 7-day, unlimited-use bearer credential carried in an emailed link. Written and read only by edge functions (service role); no client can ever see it.
 * [permissions](permissions.md) - Named RBAC permissions, namespaced as area:action. Seeded with the three registrations permissions; all three belong to the admin role in v1.
 * [role_permissions](role_permissions.md) - Join table granting permissions to roles. Seeded so the admin role holds all three registrations permissions; the guest role holds none in v1.
