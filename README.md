@@ -32,6 +32,13 @@ In the repo settings, set **Pages → Build and deployment → Source** to **Git
 The custom domain is declared in the `CNAME` file at the repo root; the old URL
 `https://anlach.github.io/juneau-love` redirects to `https://juneau.love`.
 
+## Knowledge
+
+`knowledge/` holds the project's OKF (Open Knowledge Format) bundles:
+`db` (Supabase schema, RLS), `api` (client API surface, auth), `design`
+(ux/ui), and `stories` (user stories, business rules). Routing rules and
+conventions live in `.agents/skills/juneau-knowledge/SKILL.md`.
+
 ## Notes
 
 - The "Lavishly Yours" font is bundled via `@fontsource/lavishly-yours` (imported in
