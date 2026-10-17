@@ -3,7 +3,7 @@ type: db-table
 title: assets
 description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:48:25Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:58:12Z }
 ---
 
 # assets
@@ -71,6 +71,13 @@ $$;
 - **Gallery read:** any approved guest `select`s all rows ordered
   `created_at desc`, joining [users](/users.md) for the uploader's
   display name (see [guest gallery](../stories/guest-gallery.md)).
+- **Open question — uploader names for other guests:** the join above
+  cannot work as written for anyone but the uploader: [users](/users.md)
+  RLS lets a non-admin read only their own row, so an embedded
+  `users(display_name)` comes back NULL for other uploaders (the admin
+  is the only one who sees them all). Candidate fix: a definer view
+  (`security_invoker = off`) exposing only `(id, display_name)` with
+  `public.is_approved()` built in. Decide at implementation time.
 - **Getting image bytes:** the FE never constructs S3 URLs. It passes
   the asset ids it can see to [asset-url](../api/asset-url.md) in one
   batched call and renders the returned presigned GET URLs (15-minute
