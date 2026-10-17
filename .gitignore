@@ -12,6 +12,9 @@ node_modules
 .DS_Store
 Thumbs.db
 
+# OKF generated graph views
+knowledge/**/viz.html
+
 # Env
 .env
 .env.*
