@@ -1,18 +1,24 @@
 ---
 type: db-table
 title: login_passcodes
-description: One row per user holding the current login passcode — a 7-day, unlimited-use bearer credential carried in an emailed link. Written and read only by edge functions (service role); no client can ever see it.
-status: stable
+description: "One row per user holding the current login passcode — a 7-day, unlimited-use bearer credential carried in an emailed link. Deprecated 2026-10-18: the auth flow now uses native GoTrue magiclinks and no longer uses this table; a follow-up migration drops it."
+status: deprecated
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # login_passcodes
 
+> **Deprecated — do not use.** The login-passcode design was dropped on
+> 2026-10-18 in favor of native GoTrue magiclinks (see [Client
+> authentication](../api/client-auth.md), Design notes). The table shipped
+> in the initial migration and still exists in the database; a follow-up
+> migration drops it (table + grants). No new code should read or write
+> it. The notes below are kept as a record of what shipped.
+
 The user's **login passcode** — the bearer credential carried in the
-emailed link that establishes a session
-([login-with-passcode](../api/login-with-passcode.md)). One row per user;
-every (re)issuance replaces the row, so only the most recent link ever
-works.
+emailed link that establishes a session (the `login-with-passcode` edge
+function, concept removed with the design). One row per user; every
+(re)issuance replaces the row, so only the most recent link ever works.
 
 The passcode is a credential, so it lives in its own table rather than on
 [users](/users.md): an admin reading all `users` rows for the

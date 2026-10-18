@@ -27,7 +27,10 @@ outside of migrations. Per-table details live in [the db bundle](../db/).
 - `supabase/config.toml` — local dev config (`project_id = "juneau-love"`).
 - `supabase/migrations/` — the schema, in order. Initial migration:
   `20261018033502_initial_schema.sql` (tables, triggers, helper functions,
-  views, RLS, grants, RBAC seed — see the [db bundle](../db/)).
+  views, RLS, grants, RBAC seed — see the [db bundle](../db/)). A planned
+  follow-up migration: drop the deprecated
+  [login_passcodes](../db/login_passcodes.md) table (incl. grants) and add
+  `users.last_login_link_sent_at`.
 - `supabase/seed.sql` — **local-only** dev data (local admin/guest/pending
   users). Never applied to the hosted project (`db push` ignores it; it
   runs on `supabase db reset` locally).
@@ -69,9 +72,11 @@ project before first use:
 
 - Auth: email confirmation **enabled** (step 1 of initial login).
 - Auth: JWT expiry **1 day**, refresh token expiry **365 days**.
-- Edge functions `login-with-passcode` / `send-login-link`: publicly
-  invokable; `registration-decision`: authenticated. (Functions not yet
-  written.)
+- Edge functions: `send-login-link` publicly invokable;
+  `registration-decision` authenticated. **There is no login edge
+  function** — the login link is a GoTrue magiclink exchanged
+  client-side (see [Client authentication](../api/client-auth.md)).
+  (Functions not yet written.)
 - Transactional email provider: **TBD** (Resend suggested).
 
 ## Secrets
@@ -100,5 +105,5 @@ link comes from the normal sign-in page.
   pg_class where relnamespace = 'public'::regnamespace` — every table RLS
   enabled, views not.
 - Spot-check a denied read: as an unauthenticated caller, `select` on
-  `login_passcodes` returns zero rows (grant + no policies), and `anon`
-  gets zero rows on every table.
+  every table returns zero rows (incl. `login_passcodes` until its
+  removal migration lands — grant + no policies), and `anon` sees nothing.

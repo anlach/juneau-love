@@ -24,27 +24,33 @@ directly to Supabase from the browser ("Option A"):
 
 - `supabase-js` in the client with the **anon** key; RLS is the security
   boundary. An unauthenticated session sees zero rows.
-- **Passwordless auth, two gates.** Users have no passwords. Registration
-  is client-side `auth.signUp` (email + display name) and creates a
-  `pending` registration via DB trigger; the Supabase **email-confirmation
-  link must be clicked first** (establishes the initial session). Only
-  after admin approval does the guest get a **passcode link in an email**:
-  a random passcode, valid 7 days and reusable on any device, redeemed by
-  the public edge function `login-with-passcode` for a real Supabase
-  session (1-day access token, 1-year refresh token, per project
-  settings); supabase-js then auto-refreshes and persists the session in
-  localStorage (NOT cookies — static site; NOT the `@supabase/ssr` cookie
-  hooks, which need a server at runtime). Initial login is two steps:
-  confirm email, then click the login link. "Sign in" anywhere means "email
-  me a link" (`send-login-link`).
+- **Passwordless auth, two gates, native GoTrue links.** Users have no
+  passwords. Registration is client-side `auth.signUp` (email + display
+  name) and creates a `pending` registration via DB trigger; the Supabase
+  **email-confirmation link must be clicked first** (establishes the
+  initial session). After admin approval the guest gets a **login link in
+  an email — a native GoTrue magiclink**: `send-login-link` /
+  `registration-decision` (service role) call GoTrue's admin
+  `generate_link` API and email the returned link; the client redeems it
+  **client-side** with stock `detectSessionInUrl` — the same mechanism as
+  the confirmation link, and there is **no login edge function**. GoTrue
+  owns the link token entirely (short-lived, single-use; **no credential
+  lives in our schema** — the earlier 7-day passcode design plus its
+  `login-with-passcode` function was dropped 2026-10-18, see the Design
+  notes in `knowledge/api/client-auth.md`; the shipped `login_passcodes`
+  table is deprecated, pending a removal migration). supabase-js then
+  auto-refreshes and persists the session in localStorage (NOT cookies —
+  static site; NOT the `@supabase/ssr` cookie hooks, which need a server
+  at runtime). Initial login is two steps: confirm email, then click the
+  login link. "Sign in" anywhere means "email me a link"
+  (`send-login-link`).
 - Auth-protected routes (e.g. an admin area) are gated **client-side**
   (layout checks the session and redirects — this is UX). RLS enforces
   access for real. Prerendered HTML is fetchable by URL, so never bake
   sensitive data into prerendered output.
 - The **service role** key lives only in Supabase edge functions
-  (`login-with-passcode`, `send-login-link`, `registration-decision`).
-  Anything privileged or email-sending goes through an edge function; the
-  `login_passcodes` table is service-role-only (no client read).
+  (`send-login-link`, `registration-decision`). Anything privileged or
+  email-sending goes through an edge function.
 
 ## Bundle map (what goes where)
 

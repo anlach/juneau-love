@@ -16,7 +16,7 @@ approve or reject each one,
 
 ## Flow
 
-1. Admin signs in (via the same passcode-link flow as everyone else —
+1. Admin signs in (via the same login-link flow as everyone else —
    see [Sign in with a login link](/sign-in-with-login-link.md)); the
    layout fetches their state and sees the `registrations:read`
    permission → the registrations page appears in the nav (no other
@@ -30,9 +30,10 @@ approve or reject each one,
    (always available), each gated by `registrations:approve` /
    `registrations:reject`.
 4. The `registration-decision` edge function applies the decision
-   atomically (status change + guest role grant/revoke + passcode
-   issue/revoke in one transaction) and, on approve, **emails the guest
-   their login link**; the list re-fetches and the row's status flips.
+   atomically (status change + guest role grant/revoke in one
+   transaction), and on approve generates a GoTrue login link and
+   **emails the guest their link**; the list re-fetches and the row's
+   status flips.
 
 ## Acceptance criteria
 
@@ -42,20 +43,22 @@ approve or reject each one,
 - [ ] The table lists **all** registrations regardless of status, with
       the status and verified indicator clearly shown per row.
 - [ ] Approve on a verified pending registration sets it to `approved`,
-      grants the guest role, issues a fresh 7-day passcode, **and emails
-      the guest the login link**.
+      grants the guest role, **and emails the guest their login link** (a
+      GoTrue magiclink).
 - [ ] Approve on an **unverified** registration is refused
       (`email_not_confirmed`) and the UI shows why; the admin can reject
       such rows.
 - [ ] Reject sets it to `rejected`, revokes the guest role if present,
-      and kills any unredeemed login link immediately.
+      and ends link eligibility (a previously emailed link may still be
+      exchangeable briefly — RLS gives the rejected user nothing; see
+      [Sign in with a login link](/sign-in-with-login-link.md)).
 - [ ] Re-decisions follow the transition table (`approved→rejected`,
       `rejected→approved` allowed; nothing may go back to `pending`).
 - [ ] After any decision the list re-fetches; a double-click on approve
       is a harmless no-op (or a clean `invalid_transition` error).
 - [ ] A non-admin cannot read other users' data by crafting the query
-      themselves (RLS, not just hidden UI) — and can never see anyone's
-      passcode (it isn't on `users`).
+      themselves (RLS, not just hidden UI) — and no login credential is on
+      `users` at all (links are GoTrue-owned tokens).
 
 ## Business rules
 
@@ -81,8 +84,7 @@ approve or reject each one,
 
 ## Depends on
 
-- [users](../db/users.md), [login_passcodes](../db/login_passcodes.md),
-  [user_roles](../db/user_roles.md),
+- [users](../db/users.md), [user_roles](../db/user_roles.md),
   [role_permissions](../db/role_permissions.md)
 - [List registrations](../api/registration-list.md),
   [registration-decision](../api/registration-decision.md),

@@ -18,7 +18,7 @@ while I wait.
 
 1. The user gets a session the only two ways there are: clicking the
    email-confirmation link (at registration, step 1) or clicking a
-   passcode login link (after approval, step 2 / any recovery). See
+   login link (after approval, step 2 / any recovery). See
    [Sign in with a login link](/sign-in-with-login-link.md).
 2. The layout fetches current-user state (own `users` row + permissions)
    and routes:
@@ -59,7 +59,7 @@ while I wait.
   permissions (`registrations:*`).
 - **Sessions:** 1-day access token, 1-year refresh token; supabase-js
   auto-refreshes and persists in localStorage. A returning visitor with a
-  valid refresh token needs no link at all — the passcode link is the
+  valid refresh token needs no link at all — the login link is the
   re-authentication path, not the session mechanism.
 - **No auto-refresh in v1:** the pending screen offers a manual
   "check status" fetch; background polling is an open question.

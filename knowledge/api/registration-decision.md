@@ -1,7 +1,7 @@
 ---
 type: edge-function
 title: registration-decision (approve / reject + invite email)
-description: Admin-only edge function that approves or rejects a registration; approving requires a verified email and issues a fresh login passcode plus the invite email, rejecting kills any unredeemed link.
+description: Admin-only edge function that approves or rejects a registration; approving requires a verified email and emails the guest a fresh login link (a GoTrue magiclink), rejecting ends link eligibility.
 status: draft
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 ---
@@ -10,7 +10,7 @@ generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
 
 The write side of the admin registrations page (see [Review
 registrations](../stories/review-registrations.md)). Approval must also
-issue a passcode and send an email, so this is an **edge function**
+generate a login link and send an email, so this is an **edge function**
 (service role) rather than a PostgREST update — the `users` table has no
 client write path for `status` at all.
 
@@ -43,11 +43,14 @@ Single DB transaction, then email:
    the admin can clean up unverified rows.
 5. `UPDATE users SET status = ...` — the sync trigger grants/revokes the
    `guest` role atomically in the same transaction.
-6. **Approve:** upsert a fresh [login_passcodes](../db/login_passcodes.md)
-   row (new 7-day passcode) and send the invite email with the link
-   `https://juneau.love/login?code=<passcode>`.
-   **Reject:** delete the user's `login_passcodes` row — an unredeemed
-   link dies immediately.
+6. **Approve:** call GoTrue admin `generate_link` for the target user
+   (magiclink — the same call [send-login-link](/send-login-link.md) makes)
+   and send the invite email with the returned link.
+   **Reject:** end link eligibility — nothing to delete. A link previously
+   emailed to this user (e.g. from an earlier approval) can still be
+   exchanged for a short while, but a rejected user gets nothing from it
+   (RLS yields zero rows; the client shows the rejection screen — accepted
+   trade-off, see [Client authentication](/client-auth.md), Design notes).
 7. Return the updated row + whether the email went out.
 
 ## Responses
@@ -68,7 +71,7 @@ registrations list after every call.
 ## Enforcement layers
 
 - **Function:** caller is admin; transition is legal; verify-then-approve
-  gate; email/passcode side effects happen exactly once per decision.
+  gate; link/email side effects happen exactly once per decision.
 - **DB:** the guard trigger re-enforces the transition matrix for
   `status` writers (service role allowed), and the sync trigger keeps
   roles consistent — so the DB is correct even if the function logic

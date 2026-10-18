@@ -1,7 +1,7 @@
 ---
 type: db-table
 title: users
-description: One row per registered site user — the registration record with approval status. Users have no password; the login credential (passcode) lives in login_passcodes, and email-verification state is mirrored from auth.users.
+description: One row per registered site user — the registration record with approval status. Users have no password and log in via short-lived GoTrue magiclinks (no credential lives in this table); email-verification state is mirrored from auth.users.
 status: stable
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
@@ -12,9 +12,9 @@ One row per registered site user. This is the **registration record** that
 backs the registration-review flow: registering creates a row in `pending`,
 an admin moves it to `approved` or `rejected`, and the approval state drives
 both the user-facing screens and role assignment. The auth account lives in
-Supabase Auth (`auth.users`); the login credential (passcode) lives in
-[login_passcodes](/login_passcodes.md); this table is the public-facing
-profile and approval state.
+Supabase Auth (`auth.users`); the login link is a
+**short-lived GoTrue magiclink** whose token GoTrue owns — this table
+stores no credential. It is the public-facing profile and approval state.
 
 Before a guest gets access there are **two gates**: email verification
 (Supabase Auth's confirmation email — automated; proves the guest controls
@@ -30,6 +30,7 @@ verification state is mirrored here as `email_confirmed_at`; approval is
 | `email` | `text` NOT NULL UNIQUE | Denormalized from `auth.users.email`. Stored here because clients cannot read `auth.users`; the admin's registrations table renders emails from this column. |
 | `display_name` | `text` NOT NULL | Name shown to the admin and on the site. Set at registration, editable by the user themselves only. |
 | `email_confirmed_at` | `timestamptz` | Mirrored from `auth.users.email_confirmed_at` by a trigger when the guest clicks the confirmation link. NULL = not verified yet. Drives the "verified" indicator on the admin's registrations table; `registration-decision` refuses to approve while NULL. |
+| `last_login_link_sent_at` | `timestamptz` | **Planned (follow-up migration — not in the initial schema).** When [send-login-link](../api/send-login-link.md) last emailed a login link; drives the 10-minute resend cooldown. Written only by the edge function (service role). |
 | `status` | `text` NOT NULL DEFAULT `'pending'` | CHECK `in ('pending','approved','rejected')`. The approval state; the only column ever changed by an admin, and only through the `registration-decision` edge function (never by a client). |
 | `created_at` | `timestamptz` NOT NULL DEFAULT `now()` | Registration time. |
 | `updated_at` | `timestamptz` NOT NULL DEFAULT `now()` | Set to `now()` by the guard trigger on every allowed update. |
@@ -44,6 +45,7 @@ create table public.users (
   email_confirmed_at timestamptz,
   status text not null default 'pending'
     check (status in ('pending','approved','rejected')),
+  last_login_link_sent_at timestamptz,  -- planned; follow-up migration
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -57,7 +59,10 @@ Trigger names: `on_auth_user_created` and `on_auth_email_confirmed` on
 `auth.users`; `guard_user_row` (BEFORE INSERT OR UPDATE) and
 `sync_user_role` (BEFORE UPDATE) on `users`. No indexes beyond the PK and
 the unique index on `email` — the registrations list is a few hundred rows
-ordered by `created_at` and doesn't justify one.
+ordered by `created_at` and doesn't justify one. The initial migration does
+**not** include `last_login_link_sent_at`; a follow-up migration adds the
+column and extends the `guard_user_row` writer rules (service role may
+then also write that column).
 
 The four trigger functions have `EXECUTE` revoked from `public`, `anon`,
 and `authenticated`, so a direct call cannot bypass the guard — e.g.
@@ -77,9 +82,11 @@ admin); there is no client write path for `status`.
 | `approved` | ✗ | — | admin |
 | `rejected` | ✗ | admin (re-approve) | — |
 
-Approving additionally issues a fresh [login_passcodes](/login_passcodes.md)
-row and emails the guest their login link; rejecting deletes it (both done
-by the edge function — see
+Approving additionally generates a GoTrue magiclink for the guest and
+emails it; rejecting ends link eligibility (a previously emailed link can
+still be exchanged for a short while — RLS + the client rejection screen
+are the backstop; see [Client authentication](../api/client-auth.md),
+Design notes). Both are done by the edge function — see
 [registration-decision](../api/registration-decision.md)).
 
 ## Helper function
@@ -134,15 +141,14 @@ $$;
   (documented with [assets](/assets.md)) is the only sanctioned way
   an approved guest sees another user's `display_name`.
 - **Admin read:** the admin reads all rows for the registrations page
-  ([List registrations](../api/registration-list.md)). Note the passcode
-  is *not* on this table precisely so the admin's list never exposes
-  login credentials.
+  ([List registrations](../api/registration-list.md)). Note no login
+  credential is on this table at all (links are GoTrue-owned short-lived
+  tokens), so the admin's list never exposes any.
 - **Status changes — edge function only.** The `registration-decision`
   function (service role) is the sole writer of `status`: it validates the
-  caller is an admin, applies the transition, and — on approve — upserts a
-  fresh [login_passcodes](/login_passcodes.md) row and sends the invite
-  email; on reject it deletes the passcode row so any unredeemed link
-  dies immediately. See
+  caller is an admin, applies the transition, and — on approve — generates
+  a GoTrue magiclink and sends the invite email; on reject it ends link
+  eligibility. See
   [registration-decision](../api/registration-decision.md).
 - **First-admin bootstrap (out-of-band, no UI path grants admin).** Run as
   the `postgres` role (Supabase SQL editor or migration):
@@ -155,8 +161,8 @@ $$;
      where u.email = '<admin>' and r.name = 'admin';`
   An admin therefore holds **both** `guest` and `admin` roles. Bootstrap SQL
   runs as the table owner and bypasses RLS by design (see RLS below).
-  4. The admin has no login passcode yet: their first login link comes
-     from the normal sign-in page (enter their email →
+  4. The admin has no login link yet: their first link comes from the
+     normal sign-in page (enter their email →
      `send-login-link` serves any approved user), no special path.
 - **Email changes are not supported in v1.** If an auth email is changed
   out-of-band, `users.email` goes stale; keep the two in sync manually.
@@ -191,8 +197,9 @@ the `BEFORE UPDATE` guard trigger enforces the fine rules by **writer
 class** (detected via `current_user` — `service_role` for edge functions,
 `postgres` for the owner console — and `auth.uid()`):
 
-- **`service_role` DB role** (edge functions): may change `status` only,
-  and the transition must be allowed (table above).
+- **`service_role` DB role** (edge functions): may change `status` only
+  (transition must be allowed, table above) — plus `last_login_link_sent_at`
+  (planned, with the follow-up migration). Nothing else.
 - **`postgres` role** (our own `SECURITY DEFINER` sync triggers, plus the
   owner console / migrations / bootstrap): unrestricted — the accepted
   owner bypass; the sync triggers only ever touch their own column.

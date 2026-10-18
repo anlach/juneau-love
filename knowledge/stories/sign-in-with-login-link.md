@@ -1,9 +1,9 @@
 ---
 type: user-story
-title: Sign in with a login link (passcode)
-description: An approved guest gets a session by clicking a passcode link in an email — valid 7 days, unlimited uses, any device; a lost or expired session is recovered by entering the guest's email to get a fresh link.
+title: Sign in with a login link
+description: An approved guest gets a session by clicking a login link in an email — a native GoTrue magiclink, short-lived and single-use; a lost or expired session is recovered by entering the guest's email to get a fresh link.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:31:19Z }
 ---
 
 # Sign in with a login link
@@ -18,12 +18,15 @@ recovered without contacting anyone.
 1. Prerequisite: the guest already confirmed their email at registration
    (step 1 — see [Register as a guest](/register-as-guest.md)) and an
    admin approved them.
-2. The approval email arrives with the login link (passcode in the URL).
-3. Click → `https://juneau.love/login?code=...` → the page redeems the
-   code via the `login-with-passcode` edge function → a Supabase session
-   is installed (1-day access token + 1-year refresh token) → the guest
-   lands on guest content. The code is stripped from the URL after
-   redemption.
+2. The approval email arrives with the login link — a native
+   **GoTrue magiclink** (see [Client
+   authentication](../api/client-auth.md)).
+3. Click → GoTrue's verify endpoint redirects to
+   `https://juneau.love/login?code=...&type=magiclink` → stock
+   supabase-js (`detectSessionInUrl`) exchanges the code and installs a
+   session (1-day access token + 1-year refresh token) → the guest lands
+   on guest content. The code is stripped from the URL after the
+   exchange.
 
 ## Flow — recover / re-sign in (any later time)
 
@@ -32,58 +35,61 @@ recovered without contacting anyone.
    signed out).
 2. The sign-in page asks for their email (the site's only sign-in form).
 3. `send-login-link`: registered **and** approved → a fresh link is
-   emailed (the previous passcode is invalidated). 10-minute cooldown
-   between sends.
+   emailed. 10-minute cooldown between sends.
 4. Click → the first-login flow, step 3.
 
 ## Acceptance criteria
 
-- [ ] A valid, unexpired passcode establishes a session on any
-      device/browser, even if the guest already holds a session from the
+- [ ] A valid, unexpired link establishes a session in the clicking
+      browser, even if the guest already holds a session from the
       email-confirmation step (the new session simply replaces it).
-- [ ] The same link can be used again later (unlimited uses until
-      expiry), on as many devices as the guest wants — each device gets
-      its own independent session.
-- [ ] A passcode older than 7 days (from issuance) is rejected with a
-      "this link is no longer valid — request a new one" message and a
-      path to the email form.
-- [ ] A passcode for a user who was **rejected** after the link was sent
-      is rejected instantly (status is re-checked at redemption).
-- [ ] A re-sent link invalidates the previous one (at most one live
-      passcode per user).
-- [ ] The code never persists in the URL after redemption, and an
-      expired/invalid link shows a friendly state, never a raw error.
+- [ ] A link is **single-use**: signing in on a second device means
+      requesting a fresh link (the recovery flow) — one exchange per
+      link.
+- [ ] An expired or already-used link is rejected with a "this link is no
+      longer valid — request a new one" message and a path to the email
+      form. The link's lifetime is GoTrue's (default ~1h; confirm at
+      implementation), not ours to configure.
+- [ ] A link for a user who was **rejected** after it was sent may still
+      be exchanged (GoTrue does not know our status) — the guest lands on
+      the **rejection screen** with zero data access (RLS). Accepted
+      trade-off; rejected users can never *request* a link.
 - [ ] A not-registered or not-approved email receives no link; the
       response distinguishes `not_found` / `not_approved` so the FE can
       say "not registered yet" vs "approval pending".
+- [ ] The code never persists in the URL after the exchange, and an
+      expired/invalid link shows a friendly state, never a raw error.
 
 ## Business rules
 
-- **No password, ever.** The passcode link is the only credential.
-  "Sign in" = "email me a link". There is no password reset — the
-  resend flow replaces it.
+- **No password, ever.** The emailed link is the only credential.
+  "Sign in" = "email me a link". There is no password reset — the resend
+  flow replaces it.
 - **Initial login is two steps:** confirm the email at registration
   (step 1), then click the login link after approval (step 2). Recovery
   and re-signin are one step (the email form).
-- **Passcode lifetime:** 7 days from issuance, unlimited uses, any
-  number of devices.
-- **Rotation:** each send generates a new passcode; only the most recent
-  is valid, and it is dead the moment it is redeemed for a *rejected*
-  user — status checks at redemption are the second layer.
+- **The link is GoTrue-owned:** the token is generated, stored, and
+  validated entirely by GoTrue (magiclink via the admin `generate_link`
+  API). Our schema stores **no credential** — not even a passcode. The
+  only state we keep is the cooldown timestamp
+  ([users](../db/users.md) `last_login_link_sent_at`, planned).
+- **Accepted trade-offs (2026-10-18)** replacing the dropped 7-day /
+  unlimited-use passcode design: link lifetime ~1h (a fresh link is one
+  tap away); one exchange per link (new device → fresh link); a
+  pre-rejection link can still be redeemed (RLS + rejection screen are
+  the backstop). See [Client authentication](../api/client-auth.md),
+  Design notes.
 - **Sessions:** 1-day access token, 1-year refresh token, auto-refreshed
   by supabase-js and persisted in localStorage (not cookies — static
   site). A returning visitor with a valid refresh token never needs a
   link.
 - **Cooldown:** at most one link per 10 minutes per user (anti-spam;
   email quota is a real resource).
-- **The passcode is a bearer credential:** it exists only inside the
-  emailed link, is never returned to any browser, and only the service
-  role can read it.
 
 ## Depends on
 
-- [login_passcodes](../db/login_passcodes.md)
-- [login-with-passcode](../api/login-with-passcode.md),
-  [send-login-link](../api/send-login-link.md),
+- [users](../db/users.md) (cooldown timestamp)
+- [send-login-link](../api/send-login-link.md),
   [Client authentication](../api/client-auth.md)
 - [Register as a guest](/register-as-guest.md) (step 1)
+- [Access by approval status](/access-by-approval-status.md)

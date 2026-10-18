@@ -45,7 +45,7 @@ site.
 - [ ] Re-registering with an existing email fails with a friendly
       "account already exists — sign in" message; the guest signs in
       instead (a rejected account leads to the rejection screen).
-- [ ] The guest role is **not** held and **no login passcode exists**
+- [ ] The guest role is **not** held and **no login link has been sent**
       before approval (verified in the DB).
 
 ## Business rules
@@ -60,8 +60,10 @@ site.
 - **Registration data is minimal:** email + display name, no password —
   passwordless by design, not a v1 limitation.
 - **A rejected user cannot re-register** (their auth account exists);
-  only an admin can re-approve them. Rejection also deletes any
-  unredeemed login passcode.
+  only an admin can re-approve them. Rejection ends link eligibility — a
+  previously emailed link may still be exchangeable briefly, but a
+  rejected user gets nothing from it (RLS + rejection screen; see
+  [Sign in with a login link](/sign-in-with-login-link.md)).
 - The confirmation email uses Supabase's auth email template; the
   post-approval email is our own invite (edge function, email provider
   TBD).
