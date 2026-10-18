@@ -2,8 +2,8 @@
 type: db-table
 title: role_permissions
 description: Join table granting permissions to roles. Seeded so the admin role holds all three registrations permissions; the guest role holds none in v1.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # role_permissions
@@ -29,14 +29,21 @@ create table public.role_permissions (
   primary key (role_id, permission_id)
 );
 
--- admin gets every registrations permission
+-- admin gets every registrations permission; the guest role holds none in
+-- v1 (guest access is gated on approval state, not permissions).
 insert into public.role_permissions (role_id, permission_id)
 select r.id, p.id
 from public.roles r
 cross join public.permissions p
-where r.name = 'admin';
--- guest role: intentionally no permissions in v1.
+where r.name = 'admin'
+on conflict do nothing;
 ```
+
+Shipped in `supabase/migrations/20261018033502_initial_schema.sql` (seed
+is idempotent via `on conflict do nothing`). Indexes: the composite PK
+already covers the `role_id`-leading lookup the SELECT policy uses;
+`permission_id` (FK) is intentionally unindexed — both catalogs are tiny
+and never deleted in v1.
 
 ## Helper function
 
@@ -48,13 +55,15 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.user_roles
-    where user_id = auth.uid() and role_id = role_permissions.role_id
+    where user_id = auth.uid() and role_id = has_role_id.role_id
   );
 $$;
 ```
 
 (Used by the SELECT policy below; `SECURITY DEFINER` avoids RLS
-recursion. `has_role(text)` is documented in [users](/users.md).)
+recursion. `has_role(text)` is documented in [users](/users.md). The
+parameter is referenced as `has_role_id.role_id` to disambiguate it from
+the `user_roles.role_id` column.)
 
 # Access patterns
 
@@ -74,3 +83,6 @@ create policy "role_permissions_read" on public.role_permissions
 ```
 
 No INSERT/UPDATE/DELETE policies.
+
+**Data API grants** (shipped): `service_role` — all four; `authenticated`
+— `select`; `anon` — `select` only (zero rows, no anon policy).

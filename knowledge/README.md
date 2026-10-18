@@ -10,6 +10,7 @@ Each subdirectory is one bundle; the bundle root for OKF tooling is
 | `api/` | Client API surface: PostgREST endpoints, auth flow, edge functions |
 | `design/` | UX/UI: design tokens, components, design decisions, a11y |
 | `stories/` | User stories, flows, acceptance criteria, business rules |
+| `platform/` | Cross-cutting implementation notes: hosted Supabase project, env vars, deploy workflow |
 
 Routing rules (what goes where), triggers, type vocabulary, and tooling
 live in the repo skill: `.agents/skills/juneau-knowledge/SKILL.md`.

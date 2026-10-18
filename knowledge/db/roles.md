@@ -2,8 +2,8 @@
 type: db-table
 title: roles
 description: Named RBAC roles. Seeded with admin and guest; the guest role is granted and revoked automatically by registration approval, the admin role is assigned only out-of-band.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T20:35:00Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # roles
@@ -34,8 +34,13 @@ create table public.roles (
 
 insert into public.roles (name, description) values
   ('admin', 'Site administrator: reviews and manages registrations.'),
-  ('guest', 'Approved wedding guest with access to guest content.');
+  ('guest', 'Approved wedding guest with access to guest content.')
+  on conflict (name) do nothing;
 ```
+
+Shipped in `supabase/migrations/20261018033502_initial_schema.sql` (seed
+is idempotent via `on conflict (name) do nothing`). No indexes beyond the
+PK and the unique index on `name` — a two-row catalog.
 
 # Access patterns
 
@@ -62,3 +67,6 @@ create policy "roles_read" on public.roles
 
 No INSERT/UPDATE/DELETE policies. RLS is not forced (owner can manage
 catalog rows via migrations).
+
+**Data API grants** (shipped): `service_role` — all four; `authenticated`
+— `select`; `anon` — `select` only (zero rows, no anon policy).

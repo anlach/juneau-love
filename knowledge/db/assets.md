@@ -2,8 +2,8 @@
 type: db-table
 title: assets
 description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # assets
@@ -74,6 +74,12 @@ where status = 'approved' and public.is_approved();
 grant select on public.guest_names to authenticated;
 ```
 
+Shipped in `supabase/migrations/20261018033502_initial_schema.sql`.
+Indexes: `s3_key`'s unique constraint carries its own index; plus
+`assets_user_id_idx (user_id)` (FK) and `assets_created_at_idx
+(created_at desc)` for the gallery's newest-first read. No index on
+caption or the other columns — no v1 access pattern needs one.
+
 It exists because [users](/users.md) RLS lets a guest read only
 their own row, so an embedded `users(display_name)` join would come
 back NULL for every other uploader. The view exposes only
@@ -128,3 +134,8 @@ email-verification) must not be able to plant gallery rows that would
 appear to guests later. No UPDATE or DELETE policies in v1, and no
 policy for `anon` — unauthenticated, pending, and rejected users see
 zero rows and therefore can never obtain a presigned URL for any image.
+
+**Data API grants** (shipped): `service_role` — all four; `authenticated`
+— `select, insert` (mirrors the policies, no `update`/`delete`);
+`anon` — `select` only (zero rows, no anon policy). The `guest_names`
+view is granted `select` to `authenticated` only.

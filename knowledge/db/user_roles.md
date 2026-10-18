@@ -2,8 +2,8 @@
 type: db-table
 title: user_roles
 description: Join table assigning roles to users. The guest role is written only by the users status-sync trigger; the admin role only by out-of-band bootstrap. No client DML.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # user_roles
@@ -31,6 +31,12 @@ create table public.user_roles (
   primary key (user_id, role_id)
 );
 ```
+
+Shipped in `supabase/migrations/20261018033502_initial_schema.sql`.
+Indexes: the composite PK covers both documented lookups (self by
+`user_id`, `has_role` by `user_id` + join). `role_id` (FK) is
+intentionally unindexed — the roles catalog is a two-row table that is
+never deleted in v1.
 
 # Access patterns
 
@@ -60,3 +66,8 @@ create policy "user_roles_read" on public.user_roles
 No INSERT/UPDATE/DELETE policies — direct DML is impossible from the
 client, which is what makes the users-table guard triggers sufficient.
 RLS is not forced; bootstrap runs as the owner.
+
+**Data API grants** (shipped): `service_role` — all four (operational
+headroom for edge functions); `authenticated` — `select`; `anon` —
+`select` only (zero rows, no anon policy). No DML grant for `anon` or
+`authenticated`.

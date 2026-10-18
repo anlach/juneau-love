@@ -2,8 +2,8 @@
 type: db-table
 title: login_passcodes
 description: One row per user holding the current login passcode — a 7-day, unlimited-use bearer credential carried in an emailed link. Written and read only by edge functions (service role); no client can ever see it.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # login_passcodes
@@ -40,6 +40,10 @@ create table public.login_passcodes (
 );
 ```
 
+Shipped in `supabase/migrations/20261018033502_initial_schema.sql`. The
+`passcode` unique constraint carries its own index — that is the
+`login-with-passcode` lookup. One row per user, so no other indexes.
+
 # Access patterns
 
 - **Writes — edge functions only** (service role bypasses RLS):
@@ -70,6 +74,11 @@ empty.
 RLS is not forced, so migrations and the `postgres` console (the project
 owner's) can still manage the table. The `service_role` role bypasses RLS
 — that is how the edge functions read and write it.
+
+**Data API grants** (shipped): `service_role` — `select, insert, update,
+delete`. `anon` and `authenticated` — `select` only, and with zero
+policies they see zero rows. There is **no DML grant for any API role**:
+even a future policy mistake cannot become a client write.
 
 Never add a SELECT policy without re-review: the passcode is a 7-day
 bearer credential and must never reach a browser.

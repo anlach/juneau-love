@@ -2,8 +2,8 @@
 type: db-table
 title: permissions
 description: Named RBAC permissions, namespaced as area:action. Seeded with the three registrations permissions; all three belong to the admin role in v1.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # permissions
@@ -35,8 +35,13 @@ create table public.permissions (
 insert into public.permissions (name, description) values
   ('registrations:read',    'View the list of all registrations and their approval state.'),
   ('registrations:approve', 'Approve a registration (grants the guest role).'),
-  ('registrations:reject',  'Reject a registration (revokes the guest role).');
+  ('registrations:reject',  'Reject a registration (revokes the guest role).')
+  on conflict (name) do nothing;
 ```
+
+Shipped in `supabase/migrations/20261018033502_initial_schema.sql` (seed
+is idempotent via `on conflict (name) do nothing`). No indexes beyond the
+PK and the unique index on `name` — a three-row catalog.
 
 # Access patterns
 
@@ -63,3 +68,6 @@ create policy "permissions_read" on public.permissions
 ```
 
 No INSERT/UPDATE/DELETE policies.
+
+**Data API grants** (shipped): `service_role` — all four; `authenticated`
+— `select`; `anon` — `select` only (zero rows, no anon policy).

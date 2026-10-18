@@ -2,8 +2,8 @@
 type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password; the login credential (passcode) lives in login_passcodes, and email-verification state is mirrored from auth.users.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
+status: stable
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
 ---
 
 # users
@@ -48,6 +48,21 @@ create table public.users (
   updated_at timestamptz not null default now()
 );
 ```
+
+## Shipped
+
+`supabase/migrations/20261018033502_initial_schema.sql` (applied as
+`postgres` via `supabase db push`; see [Deploy notes](../platform/deploy.md)).
+Trigger names: `on_auth_user_created` and `on_auth_email_confirmed` on
+`auth.users`; `guard_user_row` (BEFORE INSERT OR UPDATE) and
+`sync_user_role` (BEFORE UPDATE) on `users`. No indexes beyond the PK and
+the unique index on `email` — the registrations list is a few hundred rows
+ordered by `created_at` and doesn't justify one.
+
+The four trigger functions have `EXECUTE` revoked from `public`, `anon`,
+and `authenticated`, so a direct call cannot bypass the guard — e.g.
+`select public.sync_user_role()` would otherwise let a caller self-grant
+the guest role.
 
 ## Status transitions
 
@@ -108,7 +123,10 @@ $$;
   confirmation timestamp onto this row so the admin can see who is verified
   and the decision function can enforce verify-then-approve. Runs as the
   table owner, so it needs no RLS policy of its own (the guard's owner
-  branch covers it).
+  branch covers it). Gap: if an auth user is created *already confirmed*
+  (e.g. the dashboard's auto-confirm box), no UPDATE fires and the mirror
+  stays NULL — set `users.email_confirmed_at` manually in the owner
+  console in that case.
 - **Self read:** a signed-in user reads their own row to learn their
   approval state ([Current user state](../api/current-user-state.md)).
 - **Guest name join:** the self-read policy above is what blocks
@@ -161,6 +179,12 @@ zero rows). There is deliberately **no** UPDATE policy for `status`: status
 writes flow only through the `registration-decision` edge function
 (service role bypasses RLS), which has already verified the caller is an
 admin.
+
+**Data API grants** (shipped): `service_role` — `select, insert, update,
+delete`; `authenticated` — `select, insert, update` (mirrors the policies
+above, no `delete`); `anon` — `select` only, which yields zero rows since
+there is no anon policy. This project does not auto-expose new tables to
+the Data API, so the grants in the migration are mandatory, not cosmetic.
 
 The UPDATE policy is deliberately coarse (a user can touch their own row);
 the `BEFORE UPDATE` guard trigger enforces the fine rules by **writer

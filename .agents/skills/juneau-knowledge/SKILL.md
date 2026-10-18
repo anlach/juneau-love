@@ -56,10 +56,10 @@ Bundle root for OKF tooling is `knowledge/<bundle>/`.
 | `knowledge/api/` | The client-facing API surface: PostgREST operations the frontend performs (with filters/ordering/error expectations), the auth flow, and edge functions. |
 | `knowledge/design/` | UX/UI: design tokens, component conventions, page-level design decisions, accessibility. |
 | `knowledge/stories/` | User stories: user-facing flows, acceptance criteria, and **business rules** (deadlines, limits, edge cases). Business logic lives here, next to the flow it governs. |
+| `knowledge/platform/` | Cross-cutting implementation notes: the hosted Supabase project, env vars, deploy workflow, secrets handling. |
 
 Cross-cutting implementation notes (Supabase project setup, env vars,
-deploy) go in the bundle they serve. If they start piling up, add a
-fifth `knowledge/platform/` bundle rather than letting them scatter.
+deploy) go in the `knowledge/platform/` bundle.
 
 ## Type vocabulary
 
@@ -72,6 +72,7 @@ self-explanatory.
 | `api` | `api-endpoint`, `auth-flow`, `edge-function` |
 | `design` | `design-token`, `component`, `design-decision` |
 | `stories` | `user-story` |
+| `platform` | `deploy-notes` |
 
 `db-table` concepts use the body headings `# Schema`, `# Access
 patterns`, `# RLS` (in that order).
@@ -101,7 +102,7 @@ root indexes are meant to be overwritten by `index`), then commit:
 ```
 OKF=~/Projects/open-knowledge-format
 TOOL=~/.pi/agent/skills/okf/scripts/okf.py
-for b in db api design stories; do
+for b in db api design stories platform; do
   $OKF/.venv/bin/python $TOOL check knowledge/$b
   $OKF/.venv/bin/python $TOOL index knowledge/$b
 done
