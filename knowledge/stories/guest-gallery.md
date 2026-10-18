@@ -3,7 +3,7 @@ type: user-story
 title: Guest gallery
 description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. No thumbnails, no delete in v1."
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:48:25Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
 ---
 
 # Guest gallery
@@ -18,8 +18,10 @@ them to the public internet.
 
 1. An approved guest opens the gallery page. The FE reads
    [assets](../db/assets.md) (RLS returns every row to any approved
-   guest), ordered newest first, with each uploader's display name
-   joined from [users](../db/users.md).
+   guest), ordered newest first, then fetches the uploaders' display
+   names from the `guest_names` view in one batched query and joins
+   them client-side (a direct [users](../db/users.md) join is blocked
+   by its self-only RLS; see [assets](../db/assets.md)).
 2. The FE passes the asset ids to [asset-url](../api/asset-url.md) in
    one batched call and renders the returned presigned URLs
    (15-minute TTL) as `<img>` sources, caching them until near expiry.
@@ -56,6 +58,10 @@ them to the public internet.
   (`uploads/<user_id>/<uuid>`).
 - **No delete in v1:** no client UPDATE/DELETE on assets; removal is
   out-of-band (S3 object, then row).
+- **A rejected uploader's photos remain:** status changes never
+  delete assets rows (only deleting the user row cascades), so
+  photos uploaded before a rejection stay in the gallery — intended
+  for v1.
 - **No thumbnails in v1:** full-size objects are served as-is; resizing
   and derived assets are deferred (open question).
 - **Orphan objects** from failed uploads are invisible and tolerated

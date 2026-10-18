@@ -3,7 +3,7 @@ type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password; the login credential (passcode) lives in login_passcodes, and email-verification state is mirrored from auth.users.
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
 ---
 
 # users
@@ -111,6 +111,10 @@ $$;
   branch covers it).
 - **Self read:** a signed-in user reads their own row to learn their
   approval state ([Current user state](../api/current-user-state.md)).
+- **Guest name join:** the self-read policy above is what blocks
+  guests from reading other users' rows; the `guest_names` view
+  (documented with [assets](/assets.md)) is the only sanctioned way
+  an approved guest sees another user's `display_name`.
 - **Admin read:** the admin reads all rows for the registrations page
   ([List registrations](../api/registration-list.md)). Note the passcode
   is *not* on this table precisely so the admin's list never exposes

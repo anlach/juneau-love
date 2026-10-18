@@ -3,7 +3,7 @@ type: db-table
 title: assets
 description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:58:12Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
 ---
 
 # assets
@@ -61,6 +61,26 @@ as $$
 $$;
 ```
 
+Name-join view (also runs as owner via
+`security_invoker = off`, so it is exempt from
+[users](/users.md) RLS; the view's own `WHERE` is the only gate):
+
+```sql
+create view public.guest_names with (security_invoker = off)
+as select id, display_name
+from public.users
+where status = 'approved' and public.is_approved();
+
+grant select on public.guest_names to authenticated;
+```
+
+It exists because [users](/users.md) RLS lets a guest read only
+their own row, so an embedded `users(display_name)` join would come
+back NULL for every other uploader. The view exposes only
+`(id, display_name)`; `is_approved()` keeps unapproved callers at
+zero rows, and `status = 'approved'` keeps pending/rejected names
+out of the result even for approved callers.
+
 # Access patterns
 
 - **Seeding (admin, out-of-band):** the admin uploads objects to the
@@ -69,15 +89,16 @@ $$;
   console is the project owner, so the insert bypasses RLS — the same
   accepted convention as [users](/users.md) bootstrap.
 - **Gallery read:** any approved guest `select`s all rows ordered
-  `created_at desc`, joining [users](/users.md) for the uploader's
-  display name (see [guest gallery](../stories/guest-gallery.md)).
-- **Open question — uploader names for other guests:** the join above
-  cannot work as written for anyone but the uploader: [users](/users.md)
-  RLS lets a non-admin read only their own row, so an embedded
-  `users(display_name)` comes back NULL for other uploaders (the admin
-  is the only one who sees them all). Candidate fix: a definer view
-  (`security_invoker = off`) exposing only `(id, display_name)` with
-  `public.is_approved()` built in. Decide at implementation time.
+  `created_at desc`, then fetches the uploaders' display names from
+  the [`guest_names`](/assets.md) view in a second batched query
+  (`where id in (<uploader ids>)`) and joins client-side. The
+  PostgREST embed syntax cannot be used: it infers relations from
+  FKs, and a view has none (see
+  [guest gallery](../stories/guest-gallery.md)).
+- **Uploader name visibility:** via `guest_names`, an approved guest
+  sees the display names of *approved* users only — never names of
+  pending/rejected users. The admin sees all names through the
+  [users](/users.md) admin-read policy.
 - **Getting image bytes:** the FE never constructs S3 URLs. It passes
   the asset ids it can see to [asset-url](../api/asset-url.md) in one
   batched call and renders the returned presigned GET URLs (15-minute

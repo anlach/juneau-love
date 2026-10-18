@@ -3,7 +3,7 @@ type: edge-function
 title: asset-url (presigned image GET URLs)
 description: "Edge function that exchanges asset ids for short-lived (15-min) presigned S3 GET URLs — but only for rows the caller's RLS allows. The only way browser code ever sees an image byte."
 status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:48:25Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
 ---
 
 # asset-url
@@ -54,7 +54,8 @@ Content-Type: application/json
 
 ## Frontend expectations
 
-- Call **once per gallery load**, batched — not per image; cache the
+- Call **per gallery load**, batched — not per image; chunk the ids
+  into several calls once the gallery passes 100 images. Cache the
   returned URLs client-side until shortly before `expires_at`.
 - Never bake a presigned URL into prerendered HTML (`adapter-static`
   rule): the gallery renders client-side after the session check
