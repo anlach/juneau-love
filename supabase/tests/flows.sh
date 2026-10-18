@@ -9,8 +9,8 @@
 # The journey (knowledge/stories):
 #   1. Register         auth.user with display_name  -> trigger -> users row
 #   2. Confirm email    auth update -> mirror trigger -> users.email_confirmed_at
-#   3. Admin approves   service_role PATCH status     (registration-decision)
-#   4. Send login link  GoTrue admin generate_link    (send-login-link)
+#   3. Admin approves   registration-decision function (admin JWT)
+#   4. Send login link  send-login-link function (public)
 #   5. Click login link session arrives in URL fragment; link is single-use
 #   6. Guest content    self-read, guest_names, assets; refresh token works
 #   7. Admin rejects    role revoked, zero content, self-read survives
@@ -25,10 +25,16 @@
 #     raw_user_meta_data). Everything from the trigger onward is the real
 #     path. (Without the identity row, GoTrue admin calls like
 #     generate_link 500 with a duplicate-key error.)
-#   - The edge functions (send-login-link, registration-decision) do not
-#     exist yet; steps 3 and 4 replay exactly what they do (service_role
-#     DB writes + the GoTrue admin call), so this test keeps passing once
-#     they are implemented.
+#   - Steps 5, 6 and 8 call the REAL edge functions through Kong
+#     (/functions/v1/...). Without RESEND_API_KEY, email sending is skipped:
+#     send-login-link runs in dev mode (the link is printed to the function
+#     log and the call counts as sent); registration-decision reports
+#     email_sent: false. Step 7 still fetches a link straight from GoTrue
+#     (the same admin call the functions make) because the click test needs
+#     the actual URL.
+#   - registration-decision keeps runtime JWT verification locally
+#     (send-login-link opts out via config.toml), so a tokenless call gets
+#     a 401 before the function body runs.
 #
 # Usage:
 #   npx supabase start                    # one-time
@@ -58,6 +64,7 @@ DB_CONTAINER="supabase_db_${PROJECT_ID}"
 
 REST="${API_URL}/rest/v1"
 AUTH="${API_URL}/auth/v1"
+FN="${API_URL}/functions/v1"
 
 ADMIN_ID=11111111-1111-1111-1111-111111111111   # seed: approved, admin+guest
 GUEST_ID=22222222-2222-2222-2222-222222222222   # seed: approved, guest
@@ -79,6 +86,23 @@ rest() {
   [ -n "$bearer" ] && curl_args+=(-H "Authorization: Bearer $bearer")
   [ -n "$body" ] && curl_args+=(-d "$body")
   curl "${curl_args[@]}" "$@"
+}
+
+# fn <name> <bearer or -> <json body> — POST a local edge function; prints
+# "<body>\n<http_code>".
+fn() {
+  local name=$1 bearer=$2 body=$3
+  local -a h=(-H "Content-Type: application/json")
+  [ "$bearer" != "-" ] && h+=(-H "Authorization: Bearer $bearer")
+  curl -s -X POST "${FN}/${name}" "${h[@]}" -d "$body" -w $'\n%{http_code}'
+}
+fn_code() { echo "$1" | tail -1; }
+# fn_json <fn result> <python expr over d> — evaluate the expr against the
+# parsed JSON body (prints ERR on any failure).
+fn_json() {
+  echo "$1" | sed '$d' | FNJSON="$2" python3 -c \
+    'import json,os,sys; d=json.load(sys.stdin); print(eval(os.environ["FNJSON"]))' \
+    2>/dev/null || echo ERR
 }
 
 # --- test harness -----------------------------------------------------------
@@ -193,9 +217,12 @@ psql "update auth.identities set identity_data = jsonb_set(identity_data,'{email
 check "users.email_confirmed_at mirrored" "t" \
   "$(psql "select email_confirmed_at is not null from public.users where id='$NEWBIE_ID'")"
 
-# --- 5. admin approves (registration-decision path) ----------------------------
-echo "== 5. admin approves: service_role PATCH + role sync trigger =="
-rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"status":"approved"}' > /dev/null
+# --- 5. admin approves (registration-decision function) -------------------------
+echo "== 5. admin approves: registration-decision function =="
+R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"approve\"}")
+check "approve: 200" "200" "$(fn_code "$R")"
+check "approve: returns updated row (approved)" "approved" "$(fn_json "$R" "d['user']['status']")"
+check "approve: email_sent=false locally (no RESEND_API_KEY)" "False" "$(fn_json "$R" "d['email_sent']")"
 check "status is approved" "approved" \
   "$(psql "select status from public.users where id='$NEWBIE_ID'")"
 check "guest role granted atomically by sync trigger" "1" \
@@ -204,22 +231,32 @@ check "approved guest sees gallery" "1" "$(count_json "$(rest GET "$NEWBIE_JWT" 
 check "approved guest sees all approved names (incl. self)" "3" \
   "$(count_json "$(rest GET "$NEWBIE_JWT" "guest_names")")"
 
-# --- 6. send login link (send-login-link path) ---------------------------------
-echo "== 6. send login link: GoTrue admin generate_link =="
+# --- 6. send login link (send-login-link function) ---------------------------------
+echo "== 6. send login link: send-login-link function (public) =="
+R=$(fn send-login-link - '{"email":"newbie@local.dev"}')
+check "sign-in: approved user 200 sent=true" "true" "$(fn_json "$R" "str(d['sent']).lower()")"
+check "cooldown stamp written by the function" "t" \
+  "$(psql "select last_login_link_sent_at is not null from public.users where id='$NEWBIE_ID'")"
+R=$(fn send-login-link - '{"email":"newbie@local.dev"}')
+check "sign-in: second request within cooldown 429" "429" "$(fn_code "$R")"
+check "sign-in: 429 body has retry_after_seconds" "true" \
+  "$(fn_json "$R" "str(isinstance(d['retry_after_seconds'], int) and d['retry_after_seconds'] > 0).lower()")"
+R=$(fn send-login-link - '{"email":"ghost@local.dev"}')
+check "sign-in: unknown email -> sent=false, not_found" "false|not_found" \
+  "$(fn_json "$R" "str(d['sent']).lower() + '|' + d.get('reason','')")"
+R=$(fn send-login-link - '{"email":"pending@local.dev"}')
+check "sign-in: pending email -> sent=false, not_approved" "false|not_approved" \
+  "$(fn_json "$R" "str(d['sent']).lower() + '|' + d.get('reason','')")"
+
+# --- 7. click login link: session in fragment, single-use ----------------------
+# The link comes straight from GoTrue (the same admin call the functions
+# make) so the click test has the actual URL.
 GEN=$(curl -s -X POST "${AUTH}/admin/generate_link" \
   -H "apikey: $SVC_KEY" -H "Authorization: Bearer $SVC_KEY" -H "Content-Type: application/json" \
   -d '{"email":"newbie@local.dev","type":"magiclink","redirect_to":"http://localhost:3000/login"}')
 LINK=$(echo "$GEN" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("action_link",""))')
 check "generate_link returns action_link" "t" \
   "$( [ -n "$LINK" ] && echo t || echo f )"
-check "generate_link returns email_otp (GoTrue also offers a code)" "t" \
-  "$(echo "$GEN" | python3 -c 'import json,sys; print("t" if json.load(sys.stdin).get("email_otp") else "f")')"
-# The function's bookkeeping write (users.last_login_link_sent_at).
-rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"last_login_link_sent_at":"2026-10-18T12:00:00Z"}' > /dev/null
-check "cooldown stamp written by service_role" "t" \
-  "$(psql "select last_login_link_sent_at is not null from public.users where id='$NEWBIE_ID'")"
-
-# --- 7. click login link: session in fragment, single-use ----------------------
 echo "== 7. click login link: session in URL fragment; single-use =="
 REDIR=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$LINK")
 check "GoTrue /verify redirects to site" "303" "$(echo "$REDIR" | cut -d' ' -f1)"
@@ -245,8 +282,11 @@ check_error "second click rejected (single-use)" \
   "error_code=otp_expired"
 
 # --- 8. admin rejects: role revoked, zero content, self-read survives ---------
-echo "== 8. admin rejects: role revoked, RLS yields zero, self-read survives =="
-rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"status":"rejected"}' > /dev/null
+echo "== 8. admin rejects: registration-decision function =="
+R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"reject\"}")
+check "reject: 200" "200" "$(fn_code "$R")"
+check "reject: returns updated row (rejected)" "rejected" "$(fn_json "$R" "d['user']['status']")"
+check "reject: no email on reject" "False" "$(fn_json "$R" "d['email_sent']")"
 check "status is rejected" "rejected" "$(psql "select status from public.users where id='$NEWBIE_ID'")"
 check "guest role revoked by sync trigger" "0" \
   "$(psql "select count(*) from public.user_roles ur join public.roles r on r.id=ur.role_id where ur.user_id='$NEWBIE_ID' and r.name='guest'")"
@@ -255,7 +295,9 @@ check "rejected: self-read still works (rejection screen)" "rejected" \
 check "rejected: gallery empty" "0" "$(count_json "$(rest GET "$AT" "assets")")"
 check "rejected: guest_names empty" "0" "$(count_json "$(rest GET "$AT" "guest_names")")"
 # Re-approve: rejected -> approved is a legal transition.
-rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"status":"approved"}' > /dev/null
+R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"approve\"}")
+check "re-approve: 200" "200" "$(fn_code "$R")"
+check "re-approve: returns updated row (approved)" "approved" "$(fn_json "$R" "d['user']['status']")"
 check "re-approve (rejected -> approved) is legal" "approved|1" \
   "$(psql "select status || '|' || (select count(*) from public.user_roles ur join public.roles r on r.id=ur.role_id where ur.user_id='$NEWBIE_ID' and r.name='guest') from public.users where id='$NEWBIE_ID'")"
 
@@ -278,6 +320,27 @@ R=$(rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"status":"pending"}')
 check_error "service_role: approved -> pending is disallowed" "$R" "disallowed status transition"
 OUT=$(psql_out "set role authenticated; select public.sync_user_role();")
 check_error "direct trigger call as authenticated is denied" "$OUT" "permission denied"
+
+# --- 9b. function guard negatives ------------------------------------------------
+echo "== 9b. function guard negatives =="
+R=$(fn registration-decision "$GUEST_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"approve\"}")
+check "decision: guest caller 403" "403" "$(fn_code "$R")"
+check "decision: guest caller body" "not_admin" "$(fn_json "$R" "d.get('error')")"
+R=$(fn registration-decision - "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"approve\"}")
+check "decision: no token 401 (runtime verify_jwt)" "401" "$(fn_code "$R")"
+R=$(fn registration-decision "$ADMIN_JWT" '{"target_user_id":"99999999-9999-9999-9999-999999999999","decision":"approve"}')
+check "decision: unknown target 404" "404" "$(fn_code "$R")"
+check "decision: unknown target body" "not_found" "$(fn_json "$R" "d.get('error')")"
+R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$PEND_ID\",\"decision\":\"approve\"}")
+check "decision: approving unconfirmed email 409" "409" "$(fn_code "$R")"
+check "decision: unconfirmed body" "email_not_confirmed" "$(fn_json "$R" "d.get('error')")"
+R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"approve\"}")
+check "decision: approving already-approved 409" "409" "$(fn_code "$R")"
+check "decision: no-op body" "invalid_transition" "$(fn_json "$R" "d.get('error')")"
+R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"maybe\"}")
+check "decision: unknown decision value 400" "400" "$(fn_code "$R")"
+R=$(fn send-login-link - '{"email":"not-an-email"}')
+check "sign-in: invalid email 400" "400" "$(fn_code "$R")"
 
 # --- 10. cleanup ---------------------------------------------------------------
 echo "== 10. cleanup: back to seed state =="

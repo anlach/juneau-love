@@ -2,8 +2,8 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:45:00Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
 ---
 
 # Supabase project
@@ -41,13 +41,18 @@ Per [Client authentication](../api/client-auth.md):
 - Auth: JWT expiry **1 day** (86400s), refresh token expiry **365 days**
   (the GoTrue maximum).
 - Edge functions: `send-login-link` **publicly invokable** (called with
-  no JWT); `registration-decision` requires an authenticated caller (it
-  re-verifies admin itself). There is **no login edge function** — the
-  login link is exchanged client-side.
-- Transactional email provider: **TBD** (Resend suggested; the free tier
-  covers a wedding's volume). It serves both Supabase's auth emails
-  (confirmation link, via the project's email/SMTP settings) and the
-  edge functions' login-link emails.
+  no JWT — locally via `[functions.send-login-link] verify_jwt = false`
+  in `supabase/config.toml`, on deploy via `--no-verify-jwt`);
+  `registration-decision` requires an authenticated caller (it re-verifies
+  admin itself). There is **no login edge function** — the login link is
+  exchanged client-side.
+- Transactional email provider: **Resend** (the free tier covers a
+  wedding's volume). It serves both Supabase's auth emails (confirmation
+  link, via the project's email/SMTP settings) and the edge functions'
+  login-link emails (function secrets `RESEND_API_KEY` + `EMAIL_FROM`).
+  Locally, without `RESEND_API_KEY`, `send-login-link` prints the link to
+  the function log and counts as sent (dev mode); `registration-decision`
+  reports `email_sent: false`.
 
 ## Secrets
 
@@ -56,6 +61,8 @@ Per [Client authentication](../api/client-auth.md):
 | Management API token | `$SUPABASE_ACCESS_KEY` env; passed as `SUPABASE_ACCESS_TOKEN` | repo, config.toml, client env |
 | DB password | env (`SUPABASE_DB_PASSWORD`), set in dashboard | repo, client env |
 | service role key | edge functions only (secrets) | client bundle, repo |
+| Resend API key | `RESEND_API_KEY` edge function secret | repo, client env |
+| Email sender | `EMAIL_FROM` edge function secret (verified Resend sender) | repo, client env |
 | anon key | public by design (RLS is the boundary) | — it ships in the browser bundle anyway |
 
 ## First-admin bootstrap
@@ -109,6 +116,11 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
 export SUPABASE_DB_PASSWORD='<postgres password>'
 supabase db push        # applies new migrations as postgres (owner bypass)
 supabase db advisors    # RLS / schema health check after changes
+
+# edge functions (secrets first; send-login-link is public):
+supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
+supabase functions deploy send-login-link --no-verify-jwt
+supabase functions deploy registration-decision
 ```
 
 Never run `supabase db reset --linked` — it drops user data.

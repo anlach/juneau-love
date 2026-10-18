@@ -18,3 +18,9 @@ site_url = "http://localhost:3000"
 # Postgres major version of the hosted project; re-verify after the first
 # push (SELECT version()) and keep this in sync for local dev.
 major_version = 17
+
+[functions.send-login-link]
+# Publicly invokable (called with no JWT) — the function itself checks
+# eligibility. registration-decision keeps the default (verify_jwt = true);
+# it re-verifies the caller is an admin either way.
+verify_jwt = false

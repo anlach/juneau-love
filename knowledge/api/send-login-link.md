@@ -2,8 +2,8 @@
 type: edge-function
 title: send-login-link (sign in / resend link)
 description: Publicly invokable edge function that emails a fresh GoTrue magiclink login link to a given email, but only if the user is registered and approved; 10-minute cooldown per user.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:45:00Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
 ---
 
 # send-login-link
@@ -48,8 +48,11 @@ Content-Type: application/json
    - `email_otp` — GoTrue also mints a 6-digit code for the same link
      (the design ignores it and sends the link),
    - `hashed_token`, `verification_type: "magiclink"`.
-3. Send the email: friendly message + `action_link` (provider: [project
-   notes](../platform/project.md)).
+3. Send the email via **Resend** (function secrets `RESEND_API_KEY` and
+   `EMAIL_FROM` — see [project
+   notes](../platform/project.md)): friendly message + `action_link`.
+   Without `RESEND_API_KEY` (local dev) the link is printed to the
+   function log instead and the call counts as sent.
 4. `UPDATE users SET last_login_link_sent_at = now()`.
 5. 200 `{ sent: true }`.
 
@@ -57,9 +60,11 @@ Content-Type: application/json
 
 | Status | Body | When |
 |---|---|---|
-| 200 | `{ sent: true }` | link sent |
+| 200 | `{ sent: true }` | link sent (or dev-logged locally) |
 | 200 | `{ sent: false, reason: "not_found" \| "not_approved" }` | no link sent |
+| 400 | `{ error: "bad_request" }` | malformed body or invalid email |
 | 429 | `{ retry_after_seconds }` | resend cooldown active |
+| 502 | `{ error: "link_failed" \| "email_failed" }` | GoTrue or Resend failed (cooldown not stamped — a retry is safe) |
 
 ## Invariants
 

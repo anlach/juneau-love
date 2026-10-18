@@ -2,7 +2,8 @@
 type: edge-function
 title: registration-decision (approve / reject + invite email)
 description: Admin-only edge function that approves or rejects a registration; approving requires a verified email and emails the guest a fresh login link (a GoTrue magiclink), rejecting ends link eligibility.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
 ---
 
 # registration-decision
@@ -44,7 +45,10 @@ Single DB transaction, then email:
    `guest` role atomically in the same transaction.
 6. **Approve:** call GoTrue admin `generate_link` for the target user
    (magiclink — the same call [send-login-link](/send-login-link.md) makes)
-   and send the invite email with the returned link.
+   and send the invite email with the returned link (Resend, same secrets
+   as [send-login-link](/send-login-link.md); without `RESEND_API_KEY`
+   locally the email is skipped and `email_sent: false` is reported — the
+   decision still stands).
    **Reject:** end link eligibility — nothing to delete. A link previously
    emailed to this user (e.g. from an earlier approval) can still be
    exchanged for a short while, but a rejected user gets nothing from it
@@ -57,6 +61,7 @@ Single DB transaction, then email:
 | Status | Body | When |
 |---|---|---|
 | 200 | `{ user: { id, email, display_name, status, created_at }, email_sent: true \| false }` | decision applied |
+| 400 | `{ error: "bad_request" }` | malformed body (missing `target_user_id`, unknown `decision`) |
 | 403 | `{ error: "not_admin" }` | caller lacks the admin role |
 | 404 | `{ error: "not_found" }` | unknown `target_user_id` |
 | 409 | `{ error: "invalid_transition" }` | illegal status change |
