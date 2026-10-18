@@ -2,8 +2,7 @@
 type: user-story
 title: Sign in with a login link
 description: An approved guest gets a session by clicking a login link in an email — a native GoTrue magiclink, short-lived and single-use; a lost or expired session is recovered by entering the guest's email to get a fresh link.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:31:19Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # Sign in with a login link
@@ -70,19 +69,17 @@ recovered without contacting anyone.
   and re-signin are one step (the email form).
 - **The link is GoTrue-owned:** the token is generated, stored, and
   validated entirely by GoTrue (magiclink via the admin `generate_link`
-  API). Our schema stores **no credential** — not even a passcode. The
-  only state we keep is the cooldown timestamp
-  ([users](../db/users.md) `last_login_link_sent_at`, planned).
-- **Accepted trade-offs (2026-10-18)** replacing the dropped 7-day /
-  unlimited-use passcode design: link lifetime ~1h (a fresh link is one
-  tap away); one exchange per link (new device → fresh link); a
-  pre-rejection link can still be redeemed (RLS + rejection screen are
-  the backstop). See [Client authentication](../api/client-auth.md),
-  Design notes.
+  API). Our schema stores **no credential** — the only state we keep is
+  the cooldown timestamp
+  ([users](../db/users.md) `last_login_link_sent_at`).
+- **Accepted trade-offs:** GoTrue-managed link lifetime, one exchange
+  per link, and no status re-check at redemption (RLS + the rejection
+  screen are the backstop) — see [Client
+  authentication](../api/client-auth.md), Trade-offs.
 - **Sessions:** 1-day access token, 1-year refresh token, auto-refreshed
-  by supabase-js and persisted in localStorage (not cookies — static
-  site). A returning visitor with a valid refresh token never needs a
-  link.
+  by supabase-js and persisted in localStorage ([Client
+  authentication](../api/client-auth.md)). A returning visitor with a
+  valid refresh token never needs a link.
 - **Cooldown:** at most one link per 10 minutes per user (anti-spam;
   email quota is a real resource).
 

@@ -2,8 +2,7 @@
 type: user-story
 title: Register as a guest
 description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # Register as a guest
@@ -54,9 +53,10 @@ site.
   duplicate signups, and `users.email` is unique.
 - **Two gates before access:** (1) email verification — automated, via
   Supabase's confirmation email, proving the guest controls the address;
-  (2) admin approval — the human vouching. Both must pass; the
-  `registration-decision` function hard-refuses to approve an
-  unverified email, and no login link is ever sent before approval.
+  (2) admin approval — the human vouching (see [users](../db/users.md)).
+  Both must pass; the `registration-decision` function hard-refuses to
+  approve an unverified email, and no login link is ever sent before
+  approval.
 - **Registration data is minimal:** email + display name, no password —
   passwordless by design, not a v1 limitation.
 - **A rejected user cannot re-register** (their auth account exists);
@@ -65,8 +65,8 @@ site.
   rejected user gets nothing from it (RLS + rejection screen; see
   [Sign in with a login link](/sign-in-with-login-link.md)).
 - The confirmation email uses Supabase's auth email template; the
-  post-approval email is our own invite (edge function, email provider
-  TBD).
+  post-approval email is our own invite (edge function; provider —
+  [project notes](../platform/project.md)).
 
 ## Depends on
 

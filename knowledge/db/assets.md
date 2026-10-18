@@ -2,8 +2,7 @@
 type: db-table
 title: assets
 description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
-status: stable
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:44:05Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # assets
@@ -74,7 +73,6 @@ where status = 'approved' and public.is_approved();
 grant select on public.guest_names to authenticated;
 ```
 
-Shipped in `supabase/migrations/20261018033502_initial_schema.sql`.
 Indexes: `s3_key`'s unique constraint carries its own index; plus
 `assets_user_id_idx (user_id)` (FK) and `assets_created_at_idx
 (created_at desc)` for the gallery's newest-first read. No index on
@@ -109,14 +107,12 @@ out of the result even for approved callers.
   the asset ids it can see to [asset-url](../api/asset-url.md) in one
   batched call and renders the returned presigned GET URLs (15-minute
   TTL) as `<img src>`, caching them client-side until near expiry.
-- **Guest upload (planned):** [asset-upload-url](../api/asset-upload-url.md)
+- **Guest upload:** [asset-upload-url](../api/asset-upload-url.md)
   chooses the key server-side and returns a presigned PUT; the browser
   uploads the bytes, then the client inserts the row via PostgREST
   (INSERT policy below).
-- **No thumbnails in v1:** full-size objects are served as-is.
-  Resizing / derived assets are deferred (open question).
-- **No client UPDATE/DELETE in v1:** removal is out-of-band (delete the
-  S3 object, then the row) or a later admin path.
+- **No client UPDATE/DELETE in v1:** removal is out-of-band (see [guest
+  gallery](../stories/guest-gallery.md)).
 
 # RLS
 
@@ -135,7 +131,7 @@ appear to guests later. No UPDATE or DELETE policies in v1, and no
 policy for `anon` — unauthenticated, pending, and rejected users see
 zero rows and therefore can never obtain a presigned URL for any image.
 
-**Data API grants** (shipped): `service_role` — all four; `authenticated`
-— `select, insert` (mirrors the policies, no `update`/`delete`);
+**Data API grants:** `service_role` — all four; `authenticated` —
+`select, insert` (mirrors the policies, no `update`/`delete`);
 `anon` — `select` only (zero rows, no anon policy). The `guest_names`
 view is granted `select` to `authenticated` only.

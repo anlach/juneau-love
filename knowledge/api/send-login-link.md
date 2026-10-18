@@ -2,8 +2,7 @@
 type: edge-function
 title: send-login-link (sign in / resend link)
 description: Publicly invokable edge function that emails a fresh GoTrue magiclink login link to a given email, but only if the user is registered and approved; 10-minute cooldown per user.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:31:19Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # send-login-link
@@ -40,11 +39,10 @@ Content-Type: application/json
 2. **Generate the link:** call GoTrue admin `POST /auth/v1/admin/generate_link`
    (service role) with `{ email, type: "magiclink",
    redirect_to: "https://juneau.love/login" }` → `action_link`. GoTrue
-   stores the token and owns its lifetime (confirm the exact
-   request/response shape on the local stack before implementing).
-3. Send the email: friendly message + `action_link` (email provider —
-   **TBD**, Resend suggested; in local dev the message is logged and the
-   link is read from the function log).
+   stores the token and owns its lifetime (the exact request/response
+   shape is unconfirmed — verify with a local spike).
+3. Send the email: friendly message + `action_link` (provider: [project
+   notes](../platform/project.md)).
 4. `UPDATE users SET last_login_link_sent_at = now()`.
 5. 200 `{ sent: true }`.
 
@@ -56,15 +54,13 @@ Content-Type: application/json
 | 200 | `{ sent: false, reason: "not_found" \| "not_approved" }` | no link sent |
 | 429 | `{ retry_after_seconds }` | resend cooldown active |
 
-## Business rules
+## Invariants
 
-- Only **approved** users receive links.
-- The link token lives entirely in GoTrue — this function and our schema
-  store **no credential**; the cooldown timestamp is the only state we
-  keep.
-- Each send generates a fresh link; earlier links are short-lived,
-  single-use tokens, so old emails go stale quickly (GoTrue's
-  lifetime/supersession semantics confirmed in the local spike).
-- 10-minute cooldown per user (anti-spam; email provider quota is a real
-  resource).
-- No session or link material is returned in any HTTP response.
+- Only **approved** users receive links; the 10-minute cooldown is
+  anti-spam (email quota is a real resource). Both rules live in the
+  [Sign in with a login link](../stories/sign-in-with-login-link.md)
+  story.
+- The function never touches sessions and returns no session or link
+  material; the token lives entirely in GoTrue ([Client
+  authentication](/client-auth.md), Trade-offs), and the cooldown
+  timestamp is the only state it keeps.

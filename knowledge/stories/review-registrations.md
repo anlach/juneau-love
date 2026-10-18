@@ -2,8 +2,7 @@
 type: user-story
 title: Review registrations (admin)
 description: The admin opens a registrations page listing every registration with its verification and approval state, and can approve (verified emails only) or reject each one; approving emails the guest their login link.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # Review registrations
@@ -52,8 +51,8 @@ approve or reject each one,
       and ends link eligibility (a previously emailed link may still be
       exchangeable briefly — RLS gives the rejected user nothing; see
       [Sign in with a login link](/sign-in-with-login-link.md)).
-- [ ] Re-decisions follow the transition table (`approved→rejected`,
-      `rejected→approved` allowed; nothing may go back to `pending`).
+- [ ] Re-decisions follow the [transition table](../db/users.md#status-transitions)
+      (nothing may go back to `pending`).
 - [ ] After any decision the list re-fetches; a double-click on approve
       is a harmless no-op (or a clean `invalid_transition` error).
 - [ ] A non-admin cannot read other users' data by crafting the query
@@ -84,8 +83,7 @@ approve or reject each one,
 
 ## Depends on
 
-- [users](../db/users.md), [user_roles](../db/user_roles.md),
-  [role_permissions](../db/role_permissions.md)
+- [users](../db/users.md), [RBAC](../db/rbac.md)
 - [List registrations](../api/registration-list.md),
   [registration-decision](../api/registration-decision.md),
   [Current user state](../api/current-user-state.md)

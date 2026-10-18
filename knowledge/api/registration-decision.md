@@ -2,8 +2,7 @@
 type: edge-function
 title: registration-decision (approve / reject + invite email)
 description: Admin-only edge function that approves or rejects a registration; approving requires a verified email and emails the guest a fresh login link (a GoTrue magiclink), rejecting ends link eligibility.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # registration-decision
@@ -29,7 +28,7 @@ Content-Type: application/json
 Single DB transaction, then email:
 
 1. Verify the caller has the `admin` role (service-role query of
-   [user_roles](../db/user_roles.md) using the JWT's `sub`). 403
+   [user_roles](../db/rbac.md) using the JWT's `sub`). 403
    otherwise.
 2. Load the target [users](../db/users.md) row. 404 if unknown.
 3. Validate the transition against the status-transition matrix
@@ -50,7 +49,7 @@ Single DB transaction, then email:
    emailed to this user (e.g. from an earlier approval) can still be
    exchanged for a short while, but a rejected user gets nothing from it
    (RLS yields zero rows; the client shows the rejection screen — accepted
-   trade-off, see [Client authentication](/client-auth.md), Design notes).
+   trade-off, see [Client authentication](/client-auth.md), Trade-offs).
 7. Return the updated row + whether the email went out.
 
 ## Responses
