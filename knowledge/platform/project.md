@@ -3,7 +3,7 @@ type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T23:15:00Z }
 ---
 
 # Supabase project
@@ -27,6 +27,43 @@ The schema is designed in the [db bundle](../db/) and implemented as
 `supabase/seed.sql` is local-dev data only — never applied to the hosted
 project. `.env.example` documents the client env:
 `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`.
+
+## Assets S3 (Hippius)
+
+The gallery's image bytes live in a **private Hippius S3 bucket**
+([assets](../db/assets.md) explains why not Supabase Storage):
+
+| | |
+|---|---|
+| endpoint | `https://s3.hippius.com` — the only host; path-style addressing (`/bucket/key`) |
+| region | `decentralized` (the value to sign with; `GetBucketLocation` returns `us-east-1`, but the client still signs `decentralized`) |
+| bucket | `juneau-assets` — private (default policy, no public access; the key in the environment can do bucket-scoped ops, but account-level `ListBuckets` is 403) |
+| credentials | Hippius access key (`hip_…` id) + secret, held only as edge-function secrets (see [Secrets](#secrets)) |
+
+Hippius-specific SigV4 quirks (verified against the live gateway on
+2026-10-18; encoded in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)
+and covered by
+[`supabase/tests/s3-presign.ts`](../../supabase/tests/s3-presign.ts)):
+
+- The scope terminator is **`aws4_request`**, not AWS's standard
+  `request` (Hippius' own SigV4 test suite uses it).
+- Requests must carry a content hash: header-auth requests send
+  `x-amz-content-sha256` (sha256 of the body, or `UNSIGNED-PAYLOAD`);
+  presigned (query-auth) URLs carry
+  `X-Amz-Content-Sha256=UNSIGNED-PAYLOAD` as a query parameter.
+- Presigned URL expiry caps at **7 days**; the asset functions use 15
+  minutes.
+- **CORS is handled by the gateway**, not bucket config: any-origin
+  preflight returns 204 with `Access-Control-Allow-Origin: *` (and
+  `PutBucketCors` is unsupported), so the browser can follow presigned
+  URLs and PUT straight from `juneau.love`.
+- A presigned PUT's signed `Content-Type` is **not enforced**: a PUT
+  with a different `Content-Type` also succeeds, and the type actually
+  sent is what gets stored. The client sends the declared type; the
+  [asset-url](../api/asset-url.md) function pins
+  `response-content-type` from the DB row on every GET, so a drifted
+  stored type degrades to a broken image, not a wrong type served.
+- `DeleteBucketPolicy` and multipart upload are unsupported.
 
 ## Required dashboard settings (not in migrations)
 
@@ -63,7 +100,10 @@ Per [Client authentication](../api/client-auth.md):
 | service role key | edge functions only (secrets) | client bundle, repo |
 | Resend API key | `RESEND_API_KEY` edge function secret | repo, client env |
 | Email sender | `EMAIL_FROM` edge function secret (verified Resend sender) | repo, client env |
-| anon key | public by design (RLS is the boundary) | — it ships in the browser bundle anyway |
+| S3 access key id | `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius)) | repo, client env |
+| S3 secret access key | `S3_SECRET_ACCESS_KEY` edge function secret | repo, client env |
+| S3 bucket name | `S3_BUCKET` edge function secret (`juneau-assets`) | repo, client env |
+| anon key | public by design (RLS is the boundary); also the `SUPABASE_ANON_KEY` edge function secret the asset functions use to call PostgREST as the user | — it ships in the browser bundle anyway |
 
 ## First-admin bootstrap
 
@@ -119,8 +159,11 @@ supabase db advisors    # RLS / schema health check after changes
 
 # edge functions (secrets first; send-login-link is public):
 supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
+supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
 supabase functions deploy send-login-link --no-verify-jwt
 supabase functions deploy registration-decision
+supabase functions deploy asset-url
+supabase functions deploy asset-upload-url
 ```
 
 Never run `supabase db reset --linked` — it drops user data.

@@ -3,7 +3,10 @@
 Wedding website. SvelteKit frontend, prerendered with `adapter-static` and deployed to GitHub Pages.
 
 ## Coming Up
-Live updating photo slideshow and photo upload / gallery
+Photo upload / gallery — the backend is in place (private Hippius S3
+bucket, `assets` table, `asset-url` / `asset-upload-url` edge
+functions); the frontend gallery UI is next. Live updating photo
+slideshow.
 
 ## Development
 
@@ -74,6 +77,27 @@ auto-expose new tables to the Data API, so migrations must include explicit
 The first admin is bootstrapped out-of-band (dashboard → Auth → Users → Add
 user, approve the row, insert the admin role in the SQL editor) — see
 [knowledge/db/users.md](knowledge/db/users.md#access-patterns).
+
+### Deploying edge functions
+
+```sh
+# Same one-time setup as above (CLI + link). Secrets first:
+supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
+supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
+
+# Then deploy. send-login-link is the only public function:
+supabase functions deploy send-login-link --no-verify-jwt
+supabase functions deploy registration-decision
+supabase functions deploy asset-url
+supabase functions deploy asset-upload-url
+```
+
+The S3 secrets are the Hippius credentials for the private `juneau-assets`
+bucket — endpoint, signing quirks, and seeding are documented in
+[knowledge/platform/project.md](knowledge/platform/project.md#assets-s3-hippius).
+The presigner is validated by `deno run -A supabase/tests/s3-presign.ts`
+(vectors always; live round-trip when `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`, `S3_BUCKET` are in the environment).
 
 ### Client environment
 

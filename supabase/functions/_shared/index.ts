@@ -11,17 +11,25 @@ export const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "http://localhost:54
 export const SERVICE_ROLE_KEY =
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY") ?? "";
 
+/** Anon key (edge function secret; lets functions call PostgREST as any user). */
+export const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+
 /** Resend API key (edge function secret); absent in local dev. */
 export const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
 /** The site's origin (login links redirect here). Secret for prod override. */
 export const SITE_URL = (Deno.env.get("SITE_URL") ?? "https://juneau.love").replace(/\/$/, "");
 
-/** JSON response helper. */
-export function json(body: unknown, status = 200): Response {
+/** JSON response helper. Status may be a plain number or { status, headers }. */
+export function json(
+  body: unknown,
+  statusOrOptions: number | { status?: number; headers?: Record<string, string> } = 200,
+): Response {
+  const status = typeof statusOrOptions === "number" ? statusOrOptions : (statusOrOptions.status ?? 200);
+  const extraHeaders = typeof statusOrOptions === "number" ? undefined : statusOrOptions.headers;
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...extraHeaders },
   });
 }
 
@@ -122,6 +130,24 @@ export function jwtSub(authorization: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * PostgREST call as the calling user (anon apikey + the user's verified JWT)
+ * so RLS applies on their behalf. Used by the asset functions to look up
+ * rows the user may actually see — the security boundary is the policy,
+ * not the code. Returns null data on a network-level failure (res null).
+ */
+export async function restAsUser(
+  path: string,
+  userJwt: string,
+): Promise<{ status: number; data: unknown } | null> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { apikey: ANON_KEY, authorization: `Bearer ${userJwt}` },
+  }).catch(() => null);
+  if (!res) return null;
+  const data = await res.json().catch(() => null);
+  return { status: res.status, data };
 }
 
 /**
