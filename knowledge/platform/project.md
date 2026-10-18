@@ -2,7 +2,8 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:45:00Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
 ---
 
 # Supabase project
@@ -33,6 +34,10 @@ Per [Client authentication](../api/client-auth.md):
 
 - Auth: **email confirmation enabled** (the confirmation link is step 1
   of initial login).
+- Auth: **passwordless email login enabled for the email provider** —
+  the passwordless magiclink design depends on it (no passwords exist at
+  all). There is no CLI/local toggle for this; it is a dashboard
+  setting only (see [Local development](#local-development-differs-from-hosted)).
 - Auth: JWT expiry **1 day** (86400s), refresh token expiry **365 days**
   (the GoTrue maximum).
 - Edge functions: `send-login-link` **publicly invokable** (called with
@@ -58,6 +63,43 @@ Per [Client authentication](../api/client-auth.md):
 No UI or API path grants admin — see the steps in
 [users](../db/users.md) (Access patterns). The admin's first login link
 comes from the normal sign-in page.
+
+## Local development (differs from hosted)
+
+Verified against the local Supabase CLI stack (GoTrue v2.197.0,
+2026-10-18):
+
+- **Email autoconfirm is on locally** (`GOTRUE_MAILER_AUTOCONFIRM=true`) —
+  API signups are confirmed immediately, so the confirmation-link path
+  cannot be exercised locally. Hosted keeps confirmation enabled.
+- **The local CLI exposes no passwordless toggle**: `POST /auth/v1/signup`
+  without a password fails with `Signup requires a valid password`, and
+  `generate_link` with `type: "signup"` fails the same way. Hosted
+  passwordless signup is what the real registration path uses (see
+  [Required dashboard settings](#required-dashboard-settings-not-in-migrations)).
+- **Raw `auth.users` inserts** (used by [seed.sql](../../supabase/seed.sql)
+  and the flow test to stand in for hosted passwordless signups) must
+  mimic what GoTrue writes on a real signup or GoTrue admin calls 500:
+  - `instance_id = '00000000-0000-0000-0000-000000000000'`,
+    `aud = role = 'authenticated'` — GoTrue's user lookup filters on
+    `instance_id` + `aud` + `is_sso_user` (none of these have column
+    defaults); a user it can't find is re-created, which 500s with a
+    duplicate-key error.
+  - The token columns (`confirmation_token`, `recovery_token`,
+    `email_change_token_new`, `email_change`) have **no DB defaults** and
+    GoTrue scans them into non-null strings — they must be `''`, not
+    NULL (a NULL 500s with a scan error).
+  - An `auth.identities` row (provider `email`, `identity_data` with
+    `sub`/`email`/`email_verified`) — some GoTrue paths resolve users via
+    the identity row. Its `email` column is generated and must not be
+    written.
+  - `auth.users.confirmed_at` is a **generated column**
+    (`LEAST(email_confirmed_at, phone_confirmed_at)`) — set
+    `email_confirmed_at`, never `confirmed_at`.
+- `supabase/tests/flows.sh` is the end-to-end flow test (register →
+  confirm → approve → link → click → guest content → reject → guard
+  negatives) against the local stack; it runs `supabase db reset` first
+  and restores the seed state.
 
 ## Deploy
 

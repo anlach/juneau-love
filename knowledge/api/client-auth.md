@@ -2,7 +2,8 @@
 type: auth-flow
 title: Client authentication (passwordless, login links)
 description: No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the login link in an email after approval. The link is a native GoTrue magiclink exchanged client-side for a Supabase session with stock supabase-js.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:45:00Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
 ---
 
 # Client authentication
@@ -27,8 +28,9 @@ createClient(url, anonKey, {
   auth: {
     storage: localStorage,        // persisted session (not cookies — static site)
     persistSession: true,
-    detectSessionInUrl: true,     // handles both URL codes: the signup confirmation
-                                  // (type=signup) and the login link (type=magiclink)
+    detectSessionInUrl: true,     // picks up the session from the URL fragment —
+                                  // both the confirmation redirect and the login
+                                  // link redirect carry it there (not in the query)
   },
 });
 ```
@@ -68,10 +70,13 @@ createClient(url, anonKey, {
 
 ## Flow 1b — confirming the email
 
-1. The guest clicks the confirmation link
-   (`https://juneau.love/auth/confirm?code=...&type=signup` — a real
-   GoTrue code). `detectSessionInUrl: true` handles it: the account is
-   confirmed and **a session is established** in this browser.
+1. The guest clicks the confirmation link — it points at GoTrue's verify
+   endpoint (`/auth/v1/verify?token=...&type=signup&redirect_to=...`),
+   which 303-redirects to `https://juneau.love/auth/confirm` **with the
+   session in the URL fragment**; `detectSessionInUrl: true` picks it up
+   — the account is confirmed and **a session is established** in this
+   browser (same mechanism as the login link,
+   [Flow 2](#flow-2--log-in-via-the-login-link)).
 2. The mirror trigger copies `email_confirmed_at` onto the `users` row,
    so the admin's registrations table shows a verified indicator and the
    `registration-decision` function will allow approving this user.
@@ -87,17 +92,31 @@ createClient(url, anonKey, {
    login** (step 1 was the email confirmation). The guest may already
    hold a session from step 1b — the exchange simply replaces it; on a
    new device there is no session yet.
-2. Click → GoTrue's verify endpoint validates the token and redirects to
-   `https://juneau.love/login?code=...&type=magiclink`.
-   `detectSessionInUrl` exchanges the code for a session — **the same
-   mechanism as the confirmation link**, no custom client code. The page
-   strips the code from the URL (`history.replaceState`) so it never
-   lingers in history/bookmarks.
+2. Click → the link points at GoTrue's verify endpoint
+   (`/auth/v1/verify?token=...&type=magiclink&redirect_to=...`), which
+   validates the token and **303-redirects to `https://juneau.love/login`
+   with the session in the URL fragment**:
+
+   ```
+   #access_token=...&refresh_token=...&token_type=bearer
+    &expires_in=...&expires_at=...&type=magiclink
+   ```
+
+   There is **no `code=` in the query to exchange** — the session tokens
+   *are* the redirect payload. `detectSessionInUrl` reads the fragment
+   and installs the session (stock supabase-js, no custom client code).
+   The page strips the fragment (`history.replaceState`) so it never
+   lingers in history/bookmarks. Verified locally (GoTrue v2.197.0):
+   the fragment session works against PostgREST, the refresh token
+   refreshes, and the link is **single-use** — a second click on the
+   same link redirects with `#error=access_denied&error_code=otp_expired`.
 3. From then on it's plain supabase-js session management (auto-refresh,
    persistence, `signOut`).
-4. Expired / already-used / invalid link → a friendly "this link is no
-   longer valid — request a new one" state with a path to the email
-   form. GoTrue owns the token's lifetime; a fresh link is one tap away.
+4. Expired / already-used / invalid link → the redirect carries
+   `#error=access_denied&error_code=...` in the fragment → a friendly
+   "this link is no longer valid — request a new one" state with a path
+   to the email form. GoTrue owns the token's lifetime; a fresh link is
+   one tap away.
 
 ## Flow 3 — request a link (the only "sign in")
 
@@ -135,8 +154,9 @@ trade-offs:
 - **GoTrue-managed lifetime, not a longer window we choose** (default ~1
   hour; exact value and configurability unconfirmed). A stale link costs
   one tap on the email form.
-- **One exchange per link.** A second device requests a fresh link —
-  which is exactly the recovery flow.
+- **One exchange per link (verified).** A second click on the same link
+  yields `error_code=otp_expired` — a second device requests a fresh
+  link, which is exactly the recovery flow.
 - **No status re-check at redemption.** A link emailed before a later
   rejection can still be exchanged — the rejected guest gets a session,
   but RLS yields zero rows and the client shows the rejection screen.

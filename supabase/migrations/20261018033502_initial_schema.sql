@@ -1,6 +1,8 @@
--- Initial schema: users, login_passcodes, RBAC catalog (roles, permissions,
--- role_permissions, user_roles), views (user_permissions, guest_names),
--- triggers, RLS policies, Data API grants, and the RBAC seed rows.
+-- Initial schema: users (the registration record with approval status —
+-- no credential; login is a GoTrue-owned magiclink), RBAC catalog (roles,
+-- permissions, role_permissions, user_roles), views (user_permissions,
+-- guest_names), triggers, RLS policies, Data API grants, and the RBAC
+-- seed rows.
 --
 -- Source of truth: knowledge/db (one concept per table) + knowledge/api.
 -- Applied as the `postgres` role via `supabase db push`.
@@ -25,16 +27,9 @@ create table public.users (
   email_confirmed_at timestamptz,
   status text not null default 'pending'
     check (status in ('pending', 'approved', 'rejected')),
+  last_login_link_sent_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
-);
-
-create table public.login_passcodes (
-  user_id uuid primary key references public.users (id) on delete cascade,
-  passcode text not null unique,
-  issued_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  sent_at timestamptz not null default now()
 );
 
 create table public.roles (
@@ -80,7 +75,9 @@ create table public.assets (
 -- user_id FK columns on those join tables are the leading key, so no
 -- separate FK index is needed. user_roles.role_id and
 -- role_permissions.permission_id are intentionally unindexed: both
--- catalogs are tiny and never deleted in v1.
+-- catalogs are tiny and never deleted in v1. users gets no secondary
+-- index — the registrations list is a few hundred rows and the unique
+-- email index covers the email lookup.
 create index assets_user_id_idx on public.assets (user_id);
 -- Gallery read: all rows ordered newest first.
 create index assets_created_at_idx on public.assets (created_at desc);
@@ -220,13 +217,15 @@ begin
 
   if tg_op = 'UPDATE' then
     if current_user = 'service_role' then
-      -- Edge functions: status only, and only an allowed transition.
+      -- Edge functions: status (allowed transitions only) and
+      -- last_login_link_sent_at (the link-send cooldown stamp). Nothing
+      -- else.
       if new.id is distinct from old.id then
         raise exception 'users: id is immutable';
       end if;
       if (new.email, new.display_name, new.email_confirmed_at) is distinct from
           (old.email, old.display_name, old.email_confirmed_at) then
-        raise exception 'users: service_role may only change status';
+        raise exception 'users: service_role may only change status and last_login_link_sent_at';
       end if;
       if new.status is distinct from old.status
          and not ((old.status, new.status) in
@@ -240,10 +239,14 @@ begin
       -- accepted owner bypass; the sync trigger only ever touches the
       -- guest role row, the mirror trigger only email_confirmed_at.
     elsif current_user = 'authenticated' and old.id = auth.uid() then
-      -- Self: display_name only. A hand-crafted self-update of status or
-      -- email_confirmed_at is rejected even though RLS allows the row.
-      if (new.status, new.email, new.email_confirmed_at) is distinct from
-          (old.status, old.email, old.email_confirmed_at) then
+      -- Self: display_name only. A hand-crafted self-update of status,
+      -- email_confirmed_at, or last_login_link_sent_at is rejected even
+      -- though RLS allows the row — this is what stops a user from
+      -- claiming their own verification or gaming the link cooldown.
+      if (new.status, new.email, new.email_confirmed_at,
+          new.last_login_link_sent_at) is distinct from
+          (old.status, old.email, old.email_confirmed_at,
+           old.last_login_link_sent_at) then
         raise exception 'users: you may only change your own display_name';
       end if;
     else
@@ -354,11 +357,6 @@ create policy users_update_own on public.users
 -- through the registration-decision edge function (service_role bypasses
 -- RLS) after it has verified the caller is an admin.
 
-alter table public.login_passcodes enable row level security;
--- No policies at all: every non-bypassing role sees zero rows. The passcode
--- is a 7-day bearer credential; edge functions (service_role) bypass RLS.
--- Never add a SELECT policy here without re-review.
-
 alter table public.roles enable row level security;
 create policy roles_read on public.roles
   for select to authenticated
@@ -399,23 +397,21 @@ create policy assets_insert_own on public.assets
 -- explicit grants. They are deliberately minimal and mirror the RLS
 -- surface above: DML grants only where a client DML policy exists. Read
 -- grants on tables that have no anon policy give anon zero rows (not a
--- permission error). login_passcodes gets no DML grant for any API role:
--- even a future policy mistake cannot turn into a client write.
+-- permission error).
 
 grant select, insert, update, delete
-  on public.users, public.login_passcodes, public.roles, public.permissions,
+  on public.users, public.roles, public.permissions,
      public.role_permissions, public.user_roles, public.assets
   to service_role;
 
 grant select, insert, update on public.users to authenticated;
-grant select on public.login_passcodes to authenticated;
 grant select on public.roles, public.permissions, public.role_permissions,
                 public.user_roles to authenticated;
 grant select, insert on public.assets to authenticated;
 grant select on public.user_permissions to authenticated;
 grant select on public.guest_names to authenticated;
 
-grant select on public.users, public.login_passcodes, public.roles,
-                public.permissions, public.role_permissions, public.user_roles,
+grant select on public.users, public.roles, public.permissions,
+                public.role_permissions, public.user_roles,
                 public.assets to anon;
 grant select on public.user_permissions to anon;
