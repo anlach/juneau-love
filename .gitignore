@@ -15,6 +15,10 @@ Thumbs.db
 # OKF generated graph views
 knowledge/**/viz.html
 
+# Supabase local development
+supabase/.temp/
+supabase/.branches/
+
 # Env
 .env
 .env.*

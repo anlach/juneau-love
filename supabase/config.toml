@@ -1,0 +1,20 @@
+# Supabase CLI configuration (local development).
+# Everything else is the CLI default; see `supabase <group> <command> --help`.
+
+project_id = "juneau-love"
+
+[api]
+# The site talks to PostgREST only through the public schema.
+schemas = ["public"]
+
+[auth]
+# Match the hosted project (knowledge/api/client-auth.md): 1-day access
+# tokens. Locally, email confirmations stay off so the confirmation flow
+# can be exercised without a mail provider.
+jwt_expiry = 86400
+site_url = "http://localhost:3000"
+
+[db]
+# Postgres major version of the hosted project; re-verify after the first
+# push (SELECT version()) and keep this in sync for local dev.
+major_version = 17
