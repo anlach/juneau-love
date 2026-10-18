@@ -8,4 +8,5 @@
 
 # design-token
 
+* [Color palette](color-palette.md) - The site's four primary/secondary color pairs (gold/lilac, sage/plum, terracotta/peach, slate/sand): hex values, the --color-* custom properties in app.css, tentative role assignments, and contrast limits.
 * [Design tokens (palette, typography, fonts)](tokens.md) - The site's visual language: warm cream/ink/rose palette, Bona Nova serif body + Lavishly Yours script display, and the font licensing note (Bona Nova is a local trial TTF until swapped for woff2).

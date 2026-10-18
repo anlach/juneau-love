@@ -28,6 +28,17 @@
 	--rose: #b76e79;
 	--rose-deep: #a15a66;
 	color-scheme: light;
+
+	/* Site palette — four primary/secondary pairs.
+	   See knowledge/design/color-palette.md. */
+	--color-gold: #a7923c;
+	--color-lilac: #c7c5cc;
+	--color-sage: #a3c5ac;
+	--color-plum: #311b29;
+	--color-terracotta: #c9692f;
+	--color-peach: #e3ab84;
+	--color-slate: #54697a;
+	--color-sand: #e1bfa4;
 }
 
 * {
@@ -47,6 +58,10 @@ body {
 	),
 		var(--cream);
 	min-height: 100vh;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--color-sage) 55%, white);
 }
 
 .display {
