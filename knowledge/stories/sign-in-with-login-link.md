@@ -21,11 +21,12 @@ recovered without contacting anyone.
    **GoTrue magiclink** (see [Client
    authentication](../api/client-auth.md)).
 3. Click → GoTrue's verify endpoint redirects to
-   `https://juneau.love/login?code=...&type=magiclink` → stock
-   supabase-js (`detectSessionInUrl`) exchanges the code and installs a
-   session (1-day access token + 1-year refresh token) → the guest lands
-   on guest content. The code is stripped from the URL after the
-   exchange.
+   `https://juneau.love/login` **with the session tokens in the URL
+   fragment**; stock supabase-js (`detectSessionInUrl`) installs the
+   session (1-day access token + 1-year refresh token) and the page strips
+   the fragment. The guest lands on guest content. (Mechanism detail in
+   [Client authentication](../api/client-auth.md), Flow 2 — there is no
+   `code` to exchange.)
 
 ## Flow — recover / re-sign in (any later time)
 
@@ -56,7 +57,7 @@ recovered without contacting anyone.
 - [ ] A not-registered or not-approved email receives no link; the
       response distinguishes `not_found` / `not_approved` so the FE can
       say "not registered yet" vs "approval pending".
-- [ ] The code never persists in the URL after the exchange, and an
+- [ ] The session tokens never persist in the URL after the exchange, and an
       expired/invalid link shows a friendly state, never a raw error.
 
 ## Business rules
