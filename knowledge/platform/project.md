@@ -116,6 +116,16 @@ comes from the normal sign-in page.
 Verified against the local Supabase CLI stack (GoTrue v2.197.0,
 2026-10-18):
 
+- **New edge functions are invisible to the local runtime until the
+  stack restarts.** The edge-runtime container gets its function
+  registry from the `SUPABASE_INTERNAL_FUNCTIONS_CONFIG` env var,
+  snapshotted at `supabase start` — the `supabase/functions` directory is
+  bind-mounted, but nothing re-reads it. A function added after the last
+  start 404s with "Function not found" (seen with `asset-url` /
+  `asset-upload-url`). Fix: `supabase stop && supabase start` (data
+  persists in the volume). In the current CLI, `functions deploy` is
+  hosted-only — it demands an access token even with a local stack
+  running.
 - **Email autoconfirm is on locally** (`GOTRUE_MAILER_AUTOCONFIRM=true`) —
   API signups are confirmed immediately, so the confirmation-link path
   cannot be exercised locally. Hosted keeps confirmation enabled.

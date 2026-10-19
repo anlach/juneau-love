@@ -59,6 +59,19 @@ test.describe('admin registration review', () => {
 		expect(await getRoleNames(after.id)).toContain('guest');
 	});
 
+	test('approve is disabled until the email is confirmed', async ({ page }) => {
+		// Unconfirmed pending user: the verify-then-approve rule surfaces as a
+		// disabled Approve button (Reject stays available).
+		const email = await createUnconfirmedUser('Unverified Una');
+		created.push(email);
+		await signInAsAdmin(page);
+
+		const row = page.locator('tr', { hasText: email });
+		await expect(row).toBeVisible();
+		await expect(row.getByRole('button', { name: 'Approve' })).toBeDisabled();
+		await expect(row.getByRole('button', { name: 'Reject' })).toBeEnabled();
+	});
+
 	test('admin rejects a confirmed pending registration', async ({ page }) => {
 		const email = await makeConfirmedPendingUser('Dave Reject');
 		await signInAsAdmin(page);

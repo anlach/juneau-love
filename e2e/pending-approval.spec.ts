@@ -29,7 +29,7 @@ test.describe('pending registration', () => {
 
 		// Confirmation lands the guest home, still pending.
 		await expect(page).toHaveURL('/');
-		await expect(page.getByText(/you're on the list/i)).toBeVisible();
+		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
 		await expect(page.getByRole('button', { name: /check status/i })).toBeVisible();
 
 		// The DB row is now confirmed but still pending (the approval gate holds).
@@ -44,11 +44,11 @@ test.describe('pending registration', () => {
 
 		await openAuthLink(page, email, 'signup');
 		await expect(page).toHaveURL('/');
-		await expect(page.getByText(/you're on the list/i)).toBeVisible();
+		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
 
 		await page.goto('/gallery');
 		// The pending screen, not the photos.
-		await expect(page.getByText(/you're on the list/i)).toBeVisible();
+		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
 		await expect(page.getByRole('heading', { name: /photos/i })).toHaveCount(0);
 	});
 });

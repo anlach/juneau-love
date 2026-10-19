@@ -133,6 +133,17 @@ export async function setLoginLinkCooldown(email: string, value: string | null):
 		throw new Error(`cooldown update failed: ${res.status} ${await res.text()}`);
 }
 
+/** Set the user's approval status directly (service role, allowed
+ * transition only) — simulates prior admin action for negative tests. */
+export async function setUserStatus(email: string, status: 'approved' | 'rejected'): Promise<void> {
+	const row = await getUserRow(email);
+	if (!row) throw new Error(`no user row for ${email}`);
+	const res = await fetch(`${REST_URL}/users?id=eq.${row.id}`,
+		{ method: 'PATCH', headers: restHeaders(), body: JSON.stringify({ status }) });
+	if (!res.ok && res.status !== 204)
+		throw new Error(`status update failed: ${res.status} ${await res.text()}`);
+}
+
 /** Delete a test user (auth user; the `users` row cascades). */
 export async function deleteAuthUser(email: string): Promise<void> {
 	const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1000`, {

@@ -60,7 +60,7 @@ test.describe('sign-in page messaging', () => {
 		await page.goto('/login');
 		await page.getByLabel('Email').fill('nobody-here@local.dev');
 		await page.getByRole('button', { name: /email me a link/i }).click();
-		await expect(page.getByRole('alert')).toContainText(/isn’t registered yet/i);
+		await expect(page.getByRole('alert')).toContainText(/isn.t registered yet/i);
 	});
 
 	test('pending user is told they are waiting on approval', async ({ page }) => {
@@ -70,7 +70,25 @@ test.describe('sign-in page messaging', () => {
 		await page.goto('/login');
 		await page.getByLabel('Email').fill(pendingEmail);
 		await page.getByRole('button', { name: /email me a link/i }).click();
-		await expect(page.getByRole('alert')).toContainText(/hasn’t been approved yet/i);
+		await expect(page.getByRole('alert')).toContainText(/hasn.t been approved yet/i);
+	});
+});
+
+test.describe('cooldown', () => {
+	test('resending within the 10-minute window is refused (429)', async ({ page }) => {
+		await setLoginLinkCooldown(GUEST_EMAIL, new Date().toISOString());
+
+		const r = await invokeFunction('send-login-link', { email: GUEST_EMAIL });
+		expect(r.status).toBe(429);
+		expect(r.data.retry_after_seconds).toBeGreaterThan(0);
+
+		// The sign-in page turns the 429 into a "sent recently" message.
+		await page.goto('/login');
+		await page.getByLabel('Email').fill(GUEST_EMAIL);
+		await page.getByRole('button', { name: /email me a link/i }).click();
+		await expect(page.getByRole('alert')).toContainText(/sent one of these recently/i);
+
+		await setLoginLinkCooldown(GUEST_EMAIL, null); // leave the seed user clean
 	});
 });
 

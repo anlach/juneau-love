@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 test.describe('anonymous visitor', () => {
 	test('landing shows the public invitation and signed-out nav', async ({ page }) => {
 		await page.goto('/');
-		await expect(page.getByRole('heading', { name: /you're invited/i })).toBeVisible();
+		await expect(page.getByRole('heading', { name: /you.re invited/i })).toBeVisible();
 		// Signed-out nav offers sign in + register, nothing else.
 		await expect(page.getByRole('navigation').getByRole('link', { name: 'Sign in' })).toBeVisible();
 		await expect(page.getByRole('navigation').getByRole('link', { name: 'Register' })).toBeVisible();
@@ -31,7 +31,7 @@ test.describe('anonymous visitor', () => {
 		await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
 		await page.getByLabel('Email').fill('not-an-email');
 		await page.getByRole('button', { name: /email me a link/i }).click();
-		await expect(page.getByText(/doesn’t look quite right/i)).toBeVisible();
+		await expect(page.getByText(/doesn.t look quite right/i)).toBeVisible();
 	});
 
 	test('register form validates name and email', async ({ page }) => {
@@ -47,6 +47,6 @@ test.describe('anonymous visitor', () => {
 		await page.getByLabel('Your name').fill('Alex Doe');
 		await page.getByLabel('Email').fill('nope');
 		await page.getByRole('button', { name: /request access/i }).click();
-		await expect(page.getByText(/doesn’t look quite right/i)).toBeVisible();
+		await expect(page.getByText(/doesn.t look quite right/i)).toBeVisible();
 	});
 });

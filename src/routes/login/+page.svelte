@@ -25,7 +25,7 @@
 		busy = true;
 		notice = null;
 		sent = false;
-		const { data, error } = await supabase.functions.invoke('send-login-link', {
+		const { data, error, response } = await supabase.functions.invoke('send-login-link', {
 			body: { email: trimmed }
 		});
 		busy = false;
@@ -53,8 +53,9 @@
 			return;
 		}
 
-		// Non-2xx (400 / 429 / 502)
-		const status = (error as { status?: number })?.status;
+		// Non-2xx (400 / 429 / 502). `error` is a FunctionsHttpError whose
+		// `context` is the raw Response — the status comes off `response`.
+		const status = response?.status;
 		if (status === 429) {
 			notice = {
 				tone: 'err',

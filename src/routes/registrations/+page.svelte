@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { supabase } from '#lib/supabase';
+	import { functionErrorCode } from '#lib/fn-error';
 	import { auth, hasPermission } from '#lib/session.svelte.ts';
 	import StateScreen from '#lib/components/StateScreen.svelte';
 
@@ -47,20 +48,21 @@
 	async function decide(row: Registration, decision: 'approve' | 'reject') {
 		acting = row.id;
 		notice = null;
-		const { data, error } = await supabase.functions.invoke('registration-decision', {
+		const { data, error, response } = await supabase.functions.invoke('registration-decision', {
 			body: { target_user_id: row.id, decision }
 		});
 		acting = null;
 
 		if (error || !data) {
+			const code = await functionErrorCode(response);
 			notice = {
 				tone: 'err',
 				text:
-					errorCode(error) === 'email_not_confirmed'
-						? 'Their email isn’t confirmed yet, so it can’t be approved. You can reject it.'
-						: errorCode(error) === 'invalid_transition'
-							? 'That change isn’t allowed from the current state.'
-							: 'That didn’t go through. Please try again.'
+					code === 'email_not_confirmed'
+					? 'Their email isn’t confirmed yet, so it can’t be approved. You can reject it.'
+					: code === 'invalid_transition'
+						? 'That change isn’t allowed from the current state.'
+						: 'That didn’t go through. Please try again.'
 			};
 			// The row's state may have changed under us; re-sync.
 			void load();
@@ -78,11 +80,6 @@
 					}
 				: { tone: 'ok', text: `${row.display_name} rejected.` };
 		void load();
-	}
-
-	function errorCode(error: unknown): string | null {
-		const ctx = (error as { context?: { error?: string } })?.context;
-		return ctx?.error ?? null;
 	}
 
 	function fmtDate(iso: string): string {

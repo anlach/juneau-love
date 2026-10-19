@@ -10,13 +10,13 @@
 </script>
 
 <svelte:head>
-	<title>juneau.love — you're invited</title>
+	<title>juneau.love — you’re invited</title>
 </svelte:head>
 
 {#if status === 'approved'}
 	<div class="card center">
 		<h2 class="display" style="font-size: 2.2rem">Welcome, {name}</h2>
-		<p>You're all set — your invitation is inside.</p>
+		<p>You’re all set — your invitation is inside.</p>
 		<div class="spread">
 			<a class="btn" href="/gallery">See the photos</a>
 			{#if hasPermission('registrations:read')}
@@ -34,10 +34,10 @@
 	<!-- anonymous (and during the initial client-side check): public invitation -->
 	<section class="hero center">
 		<p class="kicker">juneau &amp; riley</p>
-		<h1 class="display" style="font-size: 4.5rem; margin: 0.2rem 0">You're invited</h1>
+		<h1 class="display" style="font-size: 4.5rem; margin: 0.2rem 0">You’re invited</h1>
 		<p class="sub" style="max-width: 34ch; margin: 0 auto">
 			This is a private corner of the internet for our wedding — register with your email
-			and we'll let you in.
+			and we’ll let you in.
 		</p>
 		<div class="spread">
 			<a class="btn" href="/register">Register</a>

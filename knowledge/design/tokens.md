@@ -39,6 +39,9 @@ success `#4c6b4f`, error `#9b4a3f`.
   (license permitting) — the TTFs are ~1 MB each.
 - Type scale is set per-page with inline `font-size` on the `.display`
   heading (e.g. 4.5rem hero, 2–2.6rem page titles, 2rem card titles).
+- Copy uses typographic apostrophes (`’`), not straight ones — e2e copy
+  assertions match the apostrophe with a `.` wildcard (`/you.re/i`) so a
+  straight/curly typo can’t break a test.
 
 ## Shape / elevation
 

@@ -3,6 +3,7 @@
 	import { supabase } from '#lib/supabase';
 	import { auth } from '#lib/session.svelte.ts';
 	import { cacheUrl, getCachedUrl } from '#lib/presign';
+	import { functionErrorCode } from '#lib/fn-error';
 	import StateScreen from '#lib/components/StateScreen.svelte';
 
 	interface Asset {
@@ -120,16 +121,17 @@
 
 		uploading = true;
 		try {
-			const { data, error } = await supabase.functions.invoke('asset-upload-url', {
+			const { data, error, response } = await supabase.functions.invoke('asset-upload-url', {
 				body: { filename: file.name, content_type: file.type, byte_size: file.size }
 			});
 			if (error || !data) {
+				const code = await functionErrorCode(response);
 				uploadMsg = {
 					tone: 'err',
 					text:
-						(statusOf(error) === 'unavailable'
+						code === 'unavailable'
 							? 'Uploads aren’t available in this environment right now.'
-							: 'We couldn’t start that upload. Please try again.')
+							: 'We couldn’t start that upload. Please try again.'
 				};
 				return;
 			}
@@ -159,11 +161,6 @@
 		} finally {
 			uploading = false;
 		}
-	}
-
-	function statusOf(error: unknown): string | null {
-		const ctx = (error as { context?: { error?: string } })?.context;
-		return ctx?.error ?? null;
 	}
 </script>
 

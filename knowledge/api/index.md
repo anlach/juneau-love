@@ -1,3 +1,7 @@
+# api-convention
+
+* [Decoding edge-function errors in the client](client-function-errors.md) - How the browser reads status codes and structured error codes ({ error: <code> }) from a failed supabase.functions.invoke — and why error.context is a trap.
+
 # api-endpoint
 
 * [Current user state (own status + permissions)](current-user-state.md) - The two self-queries the layout runs after a session exists: the user's own users row (approval status) and their effective permission names from the user_permissions view.
