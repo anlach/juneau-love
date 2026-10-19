@@ -1,145 +1,63 @@
+<script lang="ts">
+	import { auth, hasPermission } from '#lib/session.svelte.ts';
+	import StateScreen from '#lib/components/StateScreen.svelte';
+
+	// Safe, reactive views over the (nullable) profile — TS can't narrow
+	// `auth.profile` from `auth.kind`, so we derive the fields we display.
+	const profile = $derived(auth.profile);
+	const status = $derived(auth.kind === 'ready' ? profile?.status ?? null : null);
+	const name = $derived(profile?.display_name ?? undefined);
+</script>
+
 <svelte:head>
-	<title>You're invited to our wedding!</title>
-	<meta name="description" content="You're invited to our wedding! Please RSVP below." />
+	<title>juneau.love — you're invited</title>
 </svelte:head>
 
-<div class="page">
-	<section class="hero" aria-labelledby="invite-heading">
-		<h1 id="invite-heading" class="display">You're invited<br />to our wedding!</h1>
-
-		<div class="divider" aria-hidden="true">
-			<span class="line"></span>
-			<span class="spark">✦</span>
-			<span class="line"></span>
+{#if status === 'approved'}
+	<div class="card center">
+		<h2 class="display" style="font-size: 2.2rem">Welcome, {name}</h2>
+		<p>You're all set — your invitation is inside.</p>
+		<div class="spread">
+			<a class="btn" href="/gallery">See the photos</a>
+			{#if hasPermission('registrations:read')}
+				<a class="btn ghost" href="/registrations">Review registrations</a>
+			{/if}
 		</div>
-
-		<p class="lede">Please RSVP below.</p>
-		<a class="btn" href="#rsvp">RSVP</a>
-	</section>
-
-	<section class="rsvp" id="rsvp" aria-labelledby="rsvp-heading">
-		<h2 id="rsvp-heading" class="display">RSVP</h2>
-		<p class="rsvp-text">
-			We can't wait to celebrate with you!
-			<br />
-			<!-- TODO: hook up the real RSVP form once the backend is ready -->
-			The RSVP form is coming soon.
+	</div>
+{:else if status === 'pending'}
+	<StateScreen status="pending" name={name} />
+{:else if status === 'rejected'}
+	<StateScreen status="rejected" name={name} />
+{:else if auth.kind === 'error'}
+	<StateScreen status="error" message={auth.message} />
+{:else}
+	<!-- anonymous (and during the initial client-side check): public invitation -->
+	<section class="hero center">
+		<p class="kicker">juneau &amp; riley</p>
+		<h1 class="display" style="font-size: 4.5rem; margin: 0.2rem 0">You're invited</h1>
+		<p class="sub" style="max-width: 34ch; margin: 0 auto">
+			This is a private corner of the internet for our wedding — register with your email
+			and we'll let you in.
 		</p>
-		<button class="btn" disabled>Coming soon</button>
+		<div class="spread">
+			<a class="btn" href="/register">Register</a>
+			<a class="btn ghost" href="/login">I have an account</a>
+		</div>
 	</section>
-</div>
+{/if}
 
 <style>
-	.page {
-		--cream: #fbf7f1;
-		--ink: #4a4038;
-		--muted: #8d8177;
-		--rose: #b76e79;
-		--rose-deep: #a15a66;
-
-		min-height: 100svh;
-		display: flex;
-		flex-direction: column;
-		font-family:
-			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-		color: var(--ink);
-		background:
-			radial-gradient(60rem 40rem at 50% -10%, rgba(183, 110, 121, 0.08), transparent),
-			var(--cream);
-	}
-
 	.hero {
-		flex: 1;
-		min-height: 85svh;
-		display: grid;
-		place-content: center;
-		text-align: center;
-		padding: 4rem 1.5rem;
+		padding: 4rem 0 2rem;
 	}
-
-	.display {
-		margin: 0;
-		font-family: 'Lavishly Yours', cursive;
-		font-weight: 400;
-		font-size: clamp(3.2rem, 11vw, 6.5rem);
-		line-height: 1.2;
-		color: var(--ink);
-	}
-
-	.divider {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 1rem;
-		margin: 2rem auto;
-	}
-
-	.divider .line {
-		width: min(120px, 20vw);
-		height: 1px;
-		background: var(--rose);
-		opacity: 0.5;
-	}
-
-	.divider .spark {
+	.kicker {
+		text-transform: uppercase;
+		letter-spacing: 0.35em;
+		font-size: 0.8rem;
 		color: var(--rose);
-		font-size: 1rem;
-		line-height: 1;
+		margin-bottom: 0.5rem;
 	}
-
-	.lede {
-		margin: 0;
-		font-size: clamp(1.05rem, 2.5vw, 1.25rem);
-		letter-spacing: 0.02em;
-		color: var(--muted);
-	}
-
-	.btn {
-		display: inline-block;
-		margin-top: 2.5rem;
-		padding: 0.9rem 2.8rem 1.15rem;
-		border: none;
-		border-radius: 999px;
-		background: var(--rose);
-		color: #fff;
-		font-family: 'Lavishly Yours', cursive;
-		font-size: 1.9rem;
-		line-height: 1;
-		text-decoration: none;
-		cursor: pointer;
-		transition: background-color 0.2s ease;
-	}
-
-	.btn:hover:not(:disabled) {
-		background: var(--rose-deep);
-	}
-
-	.btn:focus-visible {
-		outline: 2px solid var(--rose-deep);
-		outline-offset: 3px;
-	}
-
-	.btn:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.rsvp {
-		width: 100%;
-		max-width: 640px;
-		margin: auto auto 0;
-		padding: 3rem 1.5rem 6rem;
-		text-align: center;
-	}
-
-	.rsvp .display {
-		font-size: clamp(2.5rem, 8vw, 4rem);
-	}
-
-	.rsvp-text {
-		margin: 1.5rem 0 0;
-		font-size: 1.05rem;
-		line-height: 1.7;
+	.sub {
 		color: var(--muted);
 	}
 </style>

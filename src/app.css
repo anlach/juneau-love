@@ -1,13 +1,324 @@
+/* Bona Nova (local trial) — swap for woff2 subsets before production. */
+@font-face {
+	font-family: 'Bona Nova';
+	src: url('/fonts/BonaNova-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Bona Nova';
+	src: url('/fonts/BonaNova-Italic.ttf') format('truetype');
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Bona Nova';
+	src: url('/fonts/BonaNova-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
 :root {
+	--cream: #fbf7f1;
+	--ink: #4a4038;
+	--muted: #8d8177;
+	--rose: #b76e79;
+	--rose-deep: #a15a66;
 	color-scheme: light;
+}
+
+* {
+	box-sizing: border-box;
 }
 
 body {
 	margin: 0;
-	-webkit-font-smoothing: antialiased;
-	text-rendering: optimizeLegibility;
+	font-family: 'Bona Nova', Georgia, 'Times New Roman', serif;
+	font-size: 17px;
+	line-height: 1.5;
+	color: var(--ink);
+	background: radial-gradient(
+		1300px 500px at 50% -150px,
+		rgba(183, 110, 121, 0.08),
+		transparent 60%
+	),
+		var(--cream);
+	min-height: 100vh;
 }
 
-::selection {
-	background: rgba(183, 110, 121, 0.25);
+.display {
+	font-family: 'Lavishly Yours', cursive;
+}
+
+a {
+	color: var(--rose-deep);
+}
+
+/* ---- layout ---- */
+
+.frame {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 0 1.25rem 4rem;
+}
+
+.site-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+	flex-wrap: wrap;
+	padding: 1.25rem 1.25rem 0.5rem;
+}
+
+.brand {
+	font-size: 1.3rem;
+	letter-spacing: 0.02em;
+	text-decoration: none;
+	color: var(--ink);
+}
+
+.brand .dot {
+	color: var(--rose);
+}
+
+.site-nav {
+	display: flex;
+	align-items: baseline;
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
+.site-nav a {
+	text-decoration: none;
+	color: var(--ink);
+}
+
+.site-nav a:hover {
+	color: var(--rose-deep);
+}
+
+.who {
+	font-style: italic;
+	color: var(--muted);
+}
+
+/* ---- shared bits ---- */
+
+.card {
+	background: rgba(255, 255, 255, 0.55);
+	border: 1px solid rgba(183, 110, 121, 0.18);
+	border-radius: 12px;
+	padding: 1.5rem 1.75rem;
+	margin: 1.5rem auto;
+	max-width: 480px;
+	box-shadow: 0 10px 30px -18px rgba(74, 64, 56, 0.35);
+}
+
+.card h2 {
+	margin-top: 0;
+	font-weight: 400;
+}
+
+.card .sub {
+	color: var(--muted);
+	font-size: 0.95rem;
+}
+
+.center {
+	text-align: center;
+}
+
+.spread {
+	display: flex;
+	gap: 0.75rem;
+	justify-content: center;
+	flex-wrap: wrap;
+	margin-top: 1rem;
+}
+
+.btn {
+	display: inline-block;
+	background: var(--rose);
+	color: #fff;
+	border: 1px solid var(--rose-deep);
+	border-radius: 999px;
+	padding: 0.55rem 1.4rem;
+	font-family: inherit;
+	font-size: 1rem;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.btn:hover {
+	background: var(--rose-deep);
+}
+
+.btn:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.btn.small {
+	padding: 0.25rem 0.9rem;
+	font-size: 0.9rem;
+}
+
+.btn.ghost {
+	background: transparent;
+	color: var(--rose-deep);
+	border-color: rgba(183, 110, 121, 0.4);
+}
+
+.btn.ghost:hover {
+	background: rgba(183, 110, 121, 0.08);
+}
+
+.btn.danger {
+	background: transparent;
+	color: #9b4a3f;
+	border-color: rgba(155, 74, 63, 0.4);
+}
+
+.field {
+	display: block;
+	margin-top: 1rem;
+	font-size: 0.95rem;
+	color: var(--muted);
+}
+
+.field input {
+	display: block;
+	width: 100%;
+	margin-top: 0.3rem;
+	padding: 0.55rem 0.7rem;
+	font-family: inherit;
+	font-size: 1rem;
+	color: var(--ink);
+	background: #fff;
+	border: 1px solid rgba(141, 129, 119, 0.4);
+	border-radius: 8px;
+}
+
+.field input:focus {
+	outline: 2px solid rgba(183, 110, 121, 0.35);
+	border-color: var(--rose);
+}
+
+.msg {
+	margin-top: 1rem;
+	font-size: 0.95rem;
+}
+
+.msg.err {
+	color: #9b4a3f;
+}
+
+.msg.ok {
+	color: #4c6b4f;
+}
+
+.badge {
+	display: inline-block;
+	border-radius: 999px;
+	padding: 0.1rem 0.7rem;
+	font-size: 0.85rem;
+}
+
+.badge.pending {
+	background: rgba(141, 129, 119, 0.15);
+	color: var(--muted);
+}
+
+.badge.approved {
+	background: rgba(76, 107, 79, 0.15);
+	color: #4c6b4f;
+}
+
+.badge.rejected {
+	background: rgba(155, 74, 63, 0.15);
+	color: #9b4a3f;
+}
+
+/* ---- gallery ---- */
+
+.gallery-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+	gap: 1rem;
+	margin-top: 1.5rem;
+}
+
+.gallery-grid figure {
+	margin: 0;
+	background: #fff;
+	border: 1px solid rgba(183, 110, 121, 0.18);
+	border-radius: 10px;
+	overflow: hidden;
+}
+
+.gallery-grid img,
+.gallery-grid .placeholder {
+	width: 100%;
+	aspect-ratio: 4 / 3;
+	object-fit: cover;
+	display: block;
+}
+
+.gallery-grid .placeholder {
+	background: repeating-linear-gradient(
+		45deg,
+		rgba(183, 110, 121, 0.06),
+		rgba(183, 110, 121, 0.06) 10px,
+		rgba(183, 110, 121, 0.12) 10px,
+		rgba(183, 110, 121, 0.12) 20px
+	);
+}
+
+.gallery-grid figcaption {
+	padding: 0.5rem 0.7rem;
+	font-size: 0.85rem;
+	color: var(--muted);
+}
+
+.gallery-grid figcaption .uploader {
+	font-style: italic;
+	color: var(--ink);
+}
+
+/* ---- registrations table ---- */
+
+.table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-top: 1rem;
+	font-size: 0.95rem;
+}
+
+.table th {
+	text-align: left;
+	font-weight: 400;
+	color: var(--muted);
+	border-bottom: 1px solid rgba(141, 129, 119, 0.35);
+	padding: 0.4rem 0.6rem;
+}
+
+.table td {
+	border-bottom: 1px solid rgba(141, 129, 119, 0.18);
+	padding: 0.4rem 0.6rem;
+	vertical-align: middle;
+}
+
+.table .actions {
+	white-space: nowrap;
+	text-align: right;
+}
+
+.table .actions .btn {
+	margin-left: 0.4rem;
+	padding: 0.2rem 0.7rem;
+	font-size: 0.85rem;
 }

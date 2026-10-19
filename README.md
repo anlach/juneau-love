@@ -3,10 +3,10 @@
 Wedding website. SvelteKit frontend, prerendered with `adapter-static` and deployed to GitHub Pages.
 
 ## Coming Up
-Photo upload / gallery — the backend is in place (private Hippius S3
-bucket, `assets` table, `asset-url` / `asset-upload-url` edge
-functions); the frontend gallery UI is next. Live updating photo
-slideshow.
+Live updating photo slideshow. (The gallery itself is in: approved guests
+see the shared photos and can upload JPEG/PNG/WebP up to 5 MB through the
+`asset-upload-url` / `asset-url` edge functions and the private Hippius S3
+bucket.)
 
 ## Development
 
@@ -17,13 +17,12 @@ npm run dev
 ## Build
 
 ```sh
-# Local preview (base path /)
-npm run build
-
-# Production build. The site is served from the root of the custom domain
-# (juneau.love), so no base path is needed.
-npm run build
+npm run build     # static site in build/ (preview with `npm run preview`)
+npm run check     # svelte-check
 ```
+
+The site is served from the root of the custom domain (juneau.love), so
+no base path is needed.
 
 ## Supabase
 
@@ -104,7 +103,30 @@ The presigner is validated by `deno run -A supabase/tests/s3-presign.ts`
 Copy `.env.example` to `.env` and fill in `PUBLIC_SUPABASE_URL` /
 `PUBLIC_SUPABASE_ANON_KEY` (dashboard → Project Settings → API). The site is
 static, so these are baked in at build time and are public by design — never
-put the service role key or the DB password in the client env.
+put the service role key or the DB password in the client env. For local
+development against the local stack, point `.env` at `http://127.0.0.1:54321`
+(dev server origin must stay `http://localhost:3000`, matching
+`site_url` in `supabase/config.toml`).
+
+## E2E tests
+
+Playwright suite in `e2e/` exercises the real flows end to end against the
+local Supabase stack: sign-in link (eligibility, cooldown, one-shot
+magic links), registration confirmation, the approval gate, the guest
+gallery, and the admin approve/reject flow (asserting the RBAC role sync
+in the DB). Auth links are minted out-of-band with GoTrue's admin
+generate_link, standing in for the mail provider.
+
+```sh
+supabase start          # local stack, with seed data
+npx playwright test     # builds the site with --mode test (.env.test),
+                        # serves it on :4173, uses system Chromium
+```
+
+Tests run single-worker in file order (they share live Supabase state)
+and clean up the users they create. `.env.test` is committed — it targets
+the local stack's default JWT secret, so no local `.env` is needed for
+e2e.
 
 ## Deploy (site)
 
@@ -125,6 +147,9 @@ conventions live in `.agents/skills/juneau-knowledge/SKILL.md`.
 
 ## Notes
 
-- The "Lavishly Yours" font is bundled via `@fontsource/lavishly-yours` (imported in
-  `src/routes/+layout.svelte`), so the site has no external font dependency.
-- The RSVP section is a placeholder; wire it up to a backend later.
+- Two display fonts: "Lavishly Yours" (script, via `@fontsource/lavishly-yours`
+  imported in `src/routes/+layout.svelte`) and "Bona Nova" (serif body, local
+  trial TTFs in `static/fonts/` — swap for woff2 subsets before production).
+- The whole UI is client-rendered (SPA fallback `404.html`) except the public
+  landing `/`, which is prerendered; no user-specific data ever renders
+  server-side.
