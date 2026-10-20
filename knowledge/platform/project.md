@@ -96,15 +96,17 @@ Per [Client authentication](../api/client-auth.md):
   deploy via `--no-verify-jwt`); `registration-decision` requires an
   authenticated caller (it re-verifies admin itself). There is **no
   login edge function** — the login link is exchanged client-side.
-- Transactional email provider: **Resend** (the free tier covers a
-  wedding's volume). It serves both Supabase's auth emails (confirmation
-  link, via the project's email/SMTP settings) and the edge functions'
-  transactional emails — login links (`send-login-link`) and the
-  new-registration admin alert (`notify-registration`) (function secrets
-  `RESEND_API_KEY` + `EMAIL_FROM`).
-  Locally, without `RESEND_API_KEY`, both public functions print the
-  email to the function log and count as sent (dev mode);
-  `registration-decision` reports `email_sent: false`.
+- Transactional email: **self-hosted Maddy on the VPS** (a wedding's
+  volume; no third-party provider). GoTrue's auth emails (confirmation
+  link, signup) go to Maddy's `:587` submission port via Supabase's
+  **custom SMTP** setting; the edge functions' emails go to Maddy through
+  a small HTTP→SMTP relay (the edge runtime can't open raw TCP). All of
+  it — topology, DNS, secrets, the Management API call — is in
+  [Mail (self-hosted Maddy)](/mail.md); the install runbook is
+  `infra/mail/README.md`.
+  Locally, without `MAIL_RELAY_URL`/`MAIL_RELAY_TOKEN`, both public
+  functions print the email to the function log and count as sent (dev
+  mode); `registration-decision` reports `email_sent: false`.
 
 ## Secrets
 
@@ -113,8 +115,9 @@ Per [Client authentication](../api/client-auth.md):
 | Management API token | `$SUPABASE_ACCESS_KEY` env; passed as `SUPABASE_ACCESS_TOKEN` | repo, config.toml, client env |
 | DB password | env (`SUPABASE_DB_PASSWORD`), set in dashboard | repo, client env |
 | service role key | edge functions only (secrets) | client bundle, repo |
-| Resend API key | `RESEND_API_KEY` edge function secret | repo, client env |
-| Email sender | `EMAIL_FROM` edge function secret (verified Resend sender) | repo, client env |
+| Mail relay URL | `MAIL_RELAY_URL` edge function secret (`https://mail.juneau.love` — not a secret, but kept with the token so deploy is one command) | repo, client env |
+| Mail relay token | `MAIL_RELAY_TOKEN` edge function secret; same value on the VPS in `/etc/mail-relay/env` | repo, client env |
+| Maddy submission password (GoTrue) | plaintext only in the Supabase project SMTP setting; on the VPS only as the hash in `/etc/maddy/smtp_passwd` | repo, client env |
 | S3 access key id | hosted: `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius-local-stack)); local: `config.toml` (CLI default, not a secret) | client env |
 | S3 secret access key | hosted: `S3_SECRET_ACCESS_KEY` edge function secret; local: `config.toml` | client env |
 | S3 bucket name | `S3_BUCKET` edge function secret (`juneau-assets`) | repo, client env |
@@ -226,7 +229,7 @@ supabase db advisors    # RLS / schema health check after changes
 
 # edge functions (secrets first; send-login-link and
 # notify-registration are public — --no-verify-jwt persists that):
-supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
+supabase secrets set MAIL_RELAY_URL='https://mail.juneau.love' MAIL_RELAY_TOKEN='<token>'
 supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
 supabase functions deploy send-login-link --no-verify-jwt
 supabase functions deploy notify-registration --no-verify-jwt

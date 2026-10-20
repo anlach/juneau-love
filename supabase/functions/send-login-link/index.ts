@@ -10,7 +10,7 @@
 // Design: knowledge/api/send-login-link.md
 
 import {
-  RESEND_API_KEY,
+  MAIL_ENABLED,
   SITE_URL,
   generateMagicLink,
   json,
@@ -68,14 +68,14 @@ Deno.serve(async (req) => {
     return json({ error: "link_failed" }, 502);
   }
 
-  // 4. Email it. Without RESEND_API_KEY (local dev) the link goes to the
+  // 4. Email it. Without a mail relay (local dev) the link goes to the
   //    function's log instead and the call counts as sent.
   let sent: boolean;
-  if (RESEND_API_KEY) {
+  if (MAIL_ENABLED) {
     const mail = loginLinkEmail(user.display_name, "Here’s your link to sign in to juneau.love:", link.action_link);
     sent = await sendEmail(user.email, mail.subject, mail.html, mail.text);
   } else {
-    console.log(`[send-login-link] dev mode — no RESEND_API_KEY. Link for ${user.email}:\n${link.action_link}`);
+    console.log(`[send-login-link] dev mode — no mail relay configured. Link for ${user.email}:\n${link.action_link}`);
     sent = true;
   }
   if (!sent) return json({ error: "email_failed" }, 502);

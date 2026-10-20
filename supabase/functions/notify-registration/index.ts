@@ -25,7 +25,7 @@
 // Design: knowledge/api/notify-registration.md
 
 import {
-  RESEND_API_KEY,
+  MAIL_ENABLED,
   SITE_URL,
   json,
   registrationAlertEmail,
@@ -103,11 +103,11 @@ Deno.serve(async (req) => {
   });
 
   let sent: boolean;
-  if (RESEND_API_KEY) {
+  if (MAIL_ENABLED) {
     sent = await sendEmail(admins, mail.subject, mail.html, mail.text);
   } else {
     console.log(
-      `[notify-registration] dev mode — no RESEND_API_KEY. Would email ${admins.join(", ")}:\n${mail.text}`,
+      `[notify-registration] dev mode — no mail relay configured. Would email ${admins.join(", ")}:\n${mail.text}`,
     );
     sent = true;
   }

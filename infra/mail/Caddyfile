@@ -1,0 +1,7 @@
+# /etc/caddy/Caddyfile — TLS for the mail relay (the only public mail-adjacent
+# surface). mail.juneau.love must resolve to the VPS; Caddy obtains and
+# renews a Let's Encrypt certificate automatically (http-01, port 80 open).
+
+mail.juneau.love {
+	reverse_proxy 127.0.0.1:8080
+}

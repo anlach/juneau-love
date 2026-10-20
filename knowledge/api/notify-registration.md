@@ -50,10 +50,10 @@ Content-Type: application/json
    user_roles → roles). None → 200 `{ sent: false, reason: "no_admins" }`
    — **not stamped**: once an admin exists (bootstrap), a later call
    alerts for real.
-3. Send one email to all recipients (Resend, same secrets as
-   [send-login-link](/send-login-link.md)) with the guest details, the
+3. Send one email to all recipients (through the mail relay — [Mail
+   (self-hosted Maddy)](../platform/mail.md)) with the guest details, the
    current verification state, and the two deep links plus a plain link to
-   the full registrations page. Without `RESEND_API_KEY` (local dev) the
+   the full registrations page. Without a relay (local dev) the
    email is printed to the function log and the call counts as sent (same
    dev mode as [send-login-link](/send-login-link.md)).
 4. `UPDATE users SET admin_notified_at = now()` — stamped **after** a
@@ -67,7 +67,7 @@ Content-Type: application/json
 | 200 | `{ sent: true }` | alert sent (or dev-logged locally) and stamped |
 | 200 | `{ sent: false, reason: "not_found" \| "not_pending" \| "already_notified" \| "no_admins" }` | no alert sent |
 | 400 | `{ error: "bad_request" }` | malformed body or invalid email |
-| 502 | `{ error: "email_failed" }` | Resend failed — **not stamped**, so the next call retries |
+| 502 | `{ error: "email_failed" }` | Mail relay failed — **not stamped**, so the next call retries |
 
 ## Invariants
 

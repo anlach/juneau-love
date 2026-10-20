@@ -81,7 +81,7 @@ user, approve the row, insert the admin role in the SQL editor) — see
 
 ```sh
 # Same one-time setup as above (CLI + link). Secrets first:
-supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
+supabase secrets set MAIL_RELAY_URL='https://mail.juneau.love' MAIL_RELAY_TOKEN='<token>'
 supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
 
 # Then deploy. send-login-link and notify-registration are the public
@@ -99,6 +99,25 @@ bucket — endpoint, signing quirks, and seeding are documented in
 The presigner is validated by `deno run -A supabase/tests/s3-presign.ts`
 (vectors always; live round-trip when `S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`, `S3_BUCKET` are in the environment).
+
+### Mail (self-hosted Maddy)
+
+There is no third-party email provider. Login links, the new-registration
+admin alert, and Supabase's own auth emails (confirmation, signup) are sent
+from a VPS running **Maddy**. Edge functions can't open raw TCP (the edge
+runtime denies `Deno.connect`), so they POST to a small HTTP→SMTP **relay**
+on the VPS (Caddy fronts it with TLS), which hands off to Maddy over
+loopback; GoTrue connects to Maddy's `:587` submission port directly
+(Supabase custom SMTP, applied via the Management API).
+
+The full VPS install — Maddy, relay, Caddy, DNS (SPF/DKIM/DMARC/PTR),
+DKIM key publishing, the Supabase SMTP call — is
+[`infra/mail/README.md`](infra/mail/README.md); the design notes are in
+[knowledge/platform/mail.md](knowledge/platform/mail.md). The relay token is
+the one value shared between the VPS (`/etc/mail-relay/env`) and Supabase
+(`MAIL_RELAY_TOKEN` secret). Locally there is no relay: without
+`MAIL_RELAY_URL`/`MAIL_RELAY_TOKEN` the functions print emails to their log
+and count them as sent.
 
 ### Client environment
 
@@ -150,7 +169,8 @@ The custom domain is declared in the `CNAME` file at the repo root; the old URL
 
 `knowledge/` holds the project's OKF (Open Knowledge Format) bundles:
 `db` (Supabase schema, RLS), `api` (client API surface, auth), `design`
-(ux/ui), and `stories` (user stories, business rules). Routing rules and
+(ux/ui), `stories` (user stories, business rules), and `platform` (hosted
+Supabase project, secrets, the self-hosted mail stack). Routing rules and
 conventions live in `.agents/skills/juneau-knowledge/SKILL.md`.
 
 ## Notes

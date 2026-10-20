@@ -14,8 +14,20 @@ export const SERVICE_ROLE_KEY =
 /** Anon key (edge function secret; lets functions call PostgREST as any user). */
 export const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-/** Resend API key (edge function secret); absent in local dev. */
-export const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+/**
+ * Base URL of the self-hosted mail relay (edge function secret), e.g.
+ * `https://mail.juneau.love`; absent in local dev. The relay (a small Deno
+ * service on the mail VPS — infra/mail/) turns the JSON payload into an
+ * SMTP hand-off to Maddy, which does the actual internet delivery with
+ * SPF/DKIM/DMARC.
+ */
+export const MAIL_RELAY_URL = Deno.env.get("MAIL_RELAY_URL") ?? "";
+
+/** Shared bearer token for the mail relay (edge function secret). */
+export const MAIL_RELAY_TOKEN = Deno.env.get("MAIL_RELAY_TOKEN") ?? "";
+
+/** True when emails are actually delivered (the relay is configured). */
+export const MAIL_ENABLED = Boolean(MAIL_RELAY_URL && MAIL_RELAY_TOKEN);
 
 /** The site's origin (login links redirect here). Secret for prod override. */
 export const SITE_URL = (Deno.env.get("SITE_URL") ?? "https://juneau.love").replace(/\/$/, "");
@@ -85,11 +97,17 @@ export async function generateMagicLink(
 }
 
 /**
- * Send one email through Resend (to one or more recipients). Returns false
- * (and logs) on any failure, including a missing RESEND_API_KEY — the
- * caller decides how to treat that (send-login-link and notify-registration
- * treat a missing key as dev mode; registration-decision reports
- * email_sent: false).
+ * Send one email through the self-hosted mail relay (to one or more
+ * recipients). Edge functions can't open raw TCP (the edge runtime denies
+ * Deno.connect), so the relay — which speaks SMTP to Maddy on the VPS — is
+ * the only mail path out of Supabase; design notes in
+ * knowledge/platform/mail.md.
+ *
+ * The From address is fixed on the relay (RELAY_FROM), not per call.
+ * Returns false (and logs) on any failure, including a missing
+ * MAIL_RELAY_URL/MAIL_RELAY_TOKEN — the caller decides how to treat that
+ * (send-login-link and notify-registration treat a missing config as dev
+ * mode; registration-decision reports email_sent: false).
  */
 export async function sendEmail(
   to: string | string[],
@@ -97,22 +115,21 @@ export async function sendEmail(
   html: string,
   text: string,
 ): Promise<boolean> {
-  if (!RESEND_API_KEY) {
-    console.log("[email] RESEND_API_KEY not set — skipping send (local dev)");
+  if (!MAIL_RELAY_URL || !MAIL_RELAY_TOKEN) {
+    console.log("[email] mail relay not configured — skipping send (local dev)");
     return false;
   }
-  const from = Deno.env.get("EMAIL_FROM") ?? "juneau.love <notify@juneau.love>";
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await fetch(`${MAIL_RELAY_URL.replace(/\/$/, "")}/send`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${RESEND_API_KEY}`,
+      authorization: `Bearer ${MAIL_RELAY_TOKEN}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], subject, html, text }),
+    body: JSON.stringify({ to: Array.isArray(to) ? to : [to], subject, html, text }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    console.error(`[email] Resend rejected the email (HTTP ${res.status}): ${body}`);
+    console.error(`[email] mail relay rejected the email (HTTP ${res.status}): ${body}`);
     return false;
   }
   return true;

@@ -45,10 +45,10 @@ Single DB transaction, then email:
    `guest` role atomically in the same transaction.
 6. **Approve:** call GoTrue admin `generate_link` for the target user
    (magiclink — the same call [send-login-link](/send-login-link.md) makes)
-   and send the invite email with the returned link (Resend, same secrets
-   as [send-login-link](/send-login-link.md); without `RESEND_API_KEY`
-   locally the email is skipped and `email_sent: false` is reported — the
-   decision still stands).
+   and send the invite email with the returned link (through the mail
+   relay — [Mail (self-hosted
+   Maddy)](../platform/mail.md); without a relay locally the email is
+   skipped and `email_sent: false` is reported — the decision still stands).
    **Reject:** end link eligibility — nothing to delete. A link previously
    emailed to this user (e.g. from an earlier approval) can still be
    exchanged for a short while, but a rejected user gets nothing from it

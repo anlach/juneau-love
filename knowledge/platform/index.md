@@ -1,3 +1,4 @@
 # project-notes
 
+* [Mail (self-hosted Maddy)](mail.md) - The self-hosted mail stack on the VPS — Maddy for delivery, the HTTP->SMTP relay that edge functions must use, DNS records, and the Supabase SMTP/secret settings it requires.
 * [Supabase project](project.md) - The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.

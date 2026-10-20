@@ -27,12 +27,12 @@
 #     (Without the identity row, GoTrue admin calls like generate_link
 #     500 with a duplicate-key error.)
 #   - Steps 5, 6 and 8 call the REAL edge functions through Kong
-#     (/functions/v1/...). Without RESEND_API_KEY, email sending is skipped:
-#     send-login-link runs in dev mode (the link is printed to the function
-#     log and the call counts as sent); registration-decision reports
-#     email_sent: false. Step 7 still fetches a link straight from GoTrue
-#     (the same admin call the functions make) because the click test needs
-#     the actual URL.
+#     (/functions/v1/...). Without a mail relay configured, email sending is
+#     skipped: send-login-link runs in dev mode (the link is printed to the
+#     function log and the call counts as sent); registration-decision
+#     reports email_sent: false. Step 7 still fetches a link straight from
+#     GoTrue (the same admin call the functions make) because the click test
+#     needs the actual URL.
 #   - registration-decision keeps runtime JWT verification locally
 #     (send-login-link opts out via config.toml), so a tokenless call gets
 #     a 401 before the function body runs.
@@ -262,7 +262,7 @@ echo "== 5. admin approves: registration-decision function =="
 R=$(fn registration-decision "$ADMIN_JWT" "{\"target_user_id\":\"$NEWBIE_ID\",\"decision\":\"approve\"}")
 check "approve: 200" "200" "$(fn_code "$R")"
 check "approve: returns updated row (approved)" "approved" "$(fn_json "$R" "d['user']['status']")"
-check "approve: email_sent=false locally (no RESEND_API_KEY)" "False" "$(fn_json "$R" "d['email_sent']")"
+check "approve: email_sent=false locally (no mail relay)" "False" "$(fn_json "$R" "d['email_sent']")"
 check "status is approved" "approved" \
   "$(psql "select status from public.users where id='$NEWBIE_ID'")"
 check "guest role granted atomically by sync trigger" "1" \
