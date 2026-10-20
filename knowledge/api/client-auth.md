@@ -2,8 +2,10 @@
 type: auth-flow
 title: Client authentication (passwordless, login links)
 description: No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the login link in an email after approval. The link is a native GoTrue magiclink exchanged client-side for a Supabase session with stock supabase-js.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:45:00Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
+verified:
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
 ---
 
 # Client authentication
@@ -52,21 +54,34 @@ createClient(url, anonKey, {
 
 **Step 1 of initial login.**
 
-- `supabase.auth.signUp({ email, options: { data: { display_name }, emailRedirectTo: 'https://juneau.love/auth/confirm' } })`
-  — **no password**.
+- Registration goes through GoTrue's **magic-link endpoint**
+  (`POST /auth/v1/otp`):
+  `supabase.auth.signInWithOtp({ email, options: { data: { display_name },
+  emailRedirectTo: 'https://juneau.love/auth/confirm' } })`. The `/signup`
+  endpoint refuses an email-only body ("Signup requires a valid password")
+  — on the hosted project too, same GoTrue code — while the magic-link
+  endpoint signs an unknown email up with a server-generated credential
+  the guest never sees, and emails the link. It depends on the hosted
+  "passwordless email login" setting ([project
+  notes](../platform/project.md)).
 - Email confirmation is **enabled** (project setting) → GoTrue emails a
   "confirm your email" link (Supabase auth email template, sent via the
   project's email provider). **No session is created yet**; the FE shows
   a session-independent "check your email to confirm your address"
-  screen.
+  screen. (Locally, autoconfirm is on, so the account starts confirmed
+  and the email is already a session-granting magiclink — [project
+  notes](../platform/project.md).)
 - Backend side effect: the `auth.users` trigger creates the
   [users](../db/users.md) row in `pending`, unconfirmed.
-- Errors:
-  - email already registered → "already registered — sign in" (the
-    sign-in page is the email form; a rejected account gets its rejection
-    screen after signing in and cannot re-register).
-  - invalid email / invalid display name → stay on the form with the
-    message.
+- "Already registered" is detected client-side: the FE first probes the
+  same endpoint with `shouldCreateUser: false`, which succeeds only for a
+  known email → "already registered — sign in" (the sign-in page is the
+  email form; a rejected account gets its rejection screen after signing
+  in and cannot re-register). Side effect: the probe emails the returning
+  guest a fresh login link — what [Flow 3](#flow-3--request-a-link) does,
+  minus the cooldown.
+- Other errors (rate limit, malformed email) → stay on the form with the
+  message.
 
 ## Flow 1b — confirming the email
 
@@ -157,6 +172,11 @@ trade-offs:
 - **One exchange per link (verified).** A second click on the same link
   yields `error_code=otp_expired` — a second device requests a fresh
   link, which is exactly the recovery flow.
+- **GoTrue stores a random password hash for email signups** — generated
+  server-side by the magic-link endpoint, unknown to and unusable by the
+  guest (the only UI entry point is the email link). "Passwordless" means
+  the guest holds no credential, not that `auth.users.password_hash` is
+  empty.
 - **No status re-check at redemption.** A link emailed before a later
   rejection can still be exchanged — the rejected guest gets a session,
   but RLS yields zero rows and the client shows the rejection screen.

@@ -173,11 +173,15 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
 - **Email autoconfirm is on locally** (`GOTRUE_MAILER_AUTOCONFIRM=true`) —
   API signups are confirmed immediately, so the confirmation-link path
   cannot be exercised locally. Hosted keeps confirmation enabled.
-- **The local CLI exposes no passwordless toggle**: `POST /auth/v1/signup`
-  without a password fails with `Signup requires a valid password`, and
-  `generate_link` with `type: "signup"` fails the same way. Hosted
-  passwordless signup is what the real registration path uses (see
-  [Required dashboard settings](#required-dashboard-settings-not-in-migrations)).
+- **`/signup` demands a password, locally and hosted**: `POST
+  /auth/v1/signup` without a password fails with `Signup requires a
+  valid password` (the hosted project runs the same GoTrue code — there
+  is no dashboard toggle that changes this), and `generate_link` with
+  `type: "signup"` fails the same way. The client therefore registers
+  through the magic-link endpoint (`POST /auth/v1/otp`; see [Client
+  authentication](../api/client-auth.md) Flow 1), which works locally too
+  — with local autoconfirm the signup arrives confirmed, so the
+  confirmation-link path itself still can't be exercised locally.
 - **Raw `auth.users` inserts** (used by [seed.sql](../../supabase/seed.sql)
   and the flow test to stand in for hosted passwordless signups) must
   mimic what GoTrue writes on a real signup or GoTrue admin calls 500:

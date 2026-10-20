@@ -2,7 +2,7 @@
 type: user-story
 title: Register as a guest
 description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
 ---
 
 # Register as a guest
@@ -18,9 +18,11 @@ site.
    and chooses "register".
 2. Form collects **email and display name** (there is no password); the
    FE validates (non-empty, email shape) before calling the API.
-3. `signUp` succeeds → the DB trigger creates the registration row in
-   `pending` → GoTrue emails a **confirm-your-email** link (**step 1 of 2
-   for initial login**). No session yet; the FE shows a
+3. The magic-link signup call (GoTrue `/otp`, see [Client
+   authentication](/client-auth.md) Flow 1) succeeds → the DB trigger
+   creates the registration row in `pending` → GoTrue emails a
+   **confirm-your-email** link (**step 1 of 2 for initial login**). No
+   session yet; the FE shows a
    "check your email to confirm your address" screen.
 4. Guest clicks the confirmation link → the account is confirmed and a
    session is established in this browser → the guest lands on the
@@ -49,8 +51,11 @@ site.
 
 ## Business rules
 
-- **One registration per email** — enforced twice: Supabase Auth rejects
-  duplicate signups, and `users.email` is unique.
+- **One registration per email** — the register form probes for an
+  existing email before signing up (the probe emails that account a login
+  link in passing), the magic-link endpoint never creates a duplicate
+  (a known email is linked to the existing account), and `users.email`
+  is unique.
 - **Two gates before access:** (1) email verification — automated, via
   Supabase's confirmation email, proving the guest controls the address;
   (2) admin approval — the human vouching (see [users](../db/users.md)).

@@ -28,28 +28,45 @@
 		}
 		busy = true;
 		formError = null;
-		// Passwordless (magic-link) signup: no password field anywhere in the flow.
-		// supabase-js's `signUp` type only declares the password-credential shape,
-		// but the GoTrue `/signup` endpoint — and the client runtime, which POSTs
-		// `password: undefined` — accepts an email-only body for passwordless
-		// signups, so we assert the credentials to the declared parameter type.
-		const credentials = {
+		// Registration goes through GoTrue's magic-link endpoint (`/otp`),
+		// not `/signup`: the signup endpoint refuses an email-only body
+		// ("Signup requires a valid password"), while the magic-link endpoint
+		// signs an unknown email up — with a server-generated credential the
+		// guest never sees — and emails the confirmation link
+		// (knowledge/api/client-auth.md, Flow 1).
+		//
+		// First probe with `shouldCreateUser: false`: it succeeds only for an
+		// email that is already registered, which is how a new guest is told
+		// apart from a returning one without an account lookup. (The probe
+		// also emails the returning guest a login link — what the sign-in
+		// page does, minus the cooldown.) A probe 429 means the same: the
+		// probe only trips GoTrue's per-user email rate limit by sending a
+		// link to a known address — a new address 422s before any send.
+		const { error: probeError } = await supabase.auth.signInWithOtp({
+			email: trimmedEmail,
+			options: {
+				shouldCreateUser: false,
+				// a returning guest lands where their login link would
+				emailRedirectTo: window.location.origin + '/login'
+			}
+		});
+		if (!probeError || probeError.status === 429) {
+			busy = false;
+			formError =
+				'An account with that email already exists — sign in instead, and we’ll sort it out from there.';
+			return;
+		}
+		const { error } = await supabase.auth.signInWithOtp({
 			email: trimmedEmail,
 			options: {
 				data: { display_name: trimmedName },
 				// origin-derived: juneau.love in prod, http://localhost:3000 in dev
 				emailRedirectTo: window.location.origin + '/auth/confirm'
 			}
-		} as unknown as Parameters<typeof supabase.auth.signUp>[0];
-		const { error } = await supabase.auth.signUp(credentials);
+		});
 		busy = false;
 		if (error) {
-			if (/already registered|already been registered/i.test(error.message)) {
-				formError =
-					'An account with that email already exists — sign in instead, and we’ll sort it out from there.';
-			} else {
-				formError = `Registration didn’t go through (${error.message}). Please try again.`;
-			}
+			formError = `Registration didn’t go through (${error.message}). Please try again.`;
 			return;
 		}
 		registeredEmail = trimmedEmail;
@@ -80,7 +97,7 @@
 			2: click it to confirm your address, and then a human will give your registration a
 			final once-over.
 		</p>
-		<p class="sub">No password, ever — links in emails are how you get in.</p>
+		<p class="sub">Links in emails are how you get in.</p>
 		<div class="spread">
 			<a class="btn ghost" href="/">Back home</a>
 		</div>
@@ -89,8 +106,8 @@
 	<div class="card">
 		<h2 class="display" style="font-size: 2rem">Register</h2>
 		<p class="sub">
-			Just your name and email — no password. After you confirm your address, a human
-			gives your registration a final check.
+			Just your name and email. After you confirm your address, a human gives your
+			registration a final check.
 		</p>
 		<!-- novalidate: the app shows its own name/email errors; without this
 		     the browser's type=email constraint validation swallows the submit. -->

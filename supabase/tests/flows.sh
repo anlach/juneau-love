@@ -17,14 +17,15 @@
 #   8. Guard negatives  self / service_role write rules; trigger fn revokes
 #
 # Notes
-#   - Locally, a real `supabase.auth.signUp()` without a password is NOT
-#     possible: the CLI does not expose GoTrue's "passwordless email"
-#     toggle, and the local GoTrue defaults to autoconfirm. The register
-#     step therefore simulates what a hosted passwordless signup writes
-#     (an unconfirmed auth.user + email identity, with
-#     raw_user_meta_data). Everything from the trigger onward is the real
-#     path. (Without the identity row, GoTrue admin calls like
-#     generate_link 500 with a duplicate-key error.)
+#   - The client registers through GoTrue's magic-link endpoint (POST
+#     /auth/v1/otp — step 3b checks the real surface), but locally that
+#     autoconfirms the user immediately, so the unconfirmed state the
+#     hosted confirmation flow depends on cannot be exercised through it.
+#     The register step (3) therefore simulates the hosted signup with a
+#     raw auth.user insert (unconfirmed, with raw_user_meta_data +
+#     identity row) so step 4's confirmation mirror is the real path.
+#     (Without the identity row, GoTrue admin calls like generate_link
+#     500 with a duplicate-key error.)
 #   - Steps 5, 6 and 8 call the REAL edge functions through Kong
 #     (/functions/v1/...). Without RESEND_API_KEY, email sending is skipped:
 #     send-login-link runs in dev mode (the link is printed to the function
@@ -70,6 +71,7 @@ ADMIN_ID=11111111-1111-1111-1111-111111111111   # seed: approved, admin+guest
 GUEST_ID=22222222-2222-2222-2222-222222222222   # seed: approved, guest
 PEND_ID=33333333-3333-3333-3333-333333333333    # seed: pending, unconfirmed
 NEWBIE_ID=55555555-5555-5555-5555-555555555555  # this test's user
+OTP_EMAIL=otp-real@local.dev                      # step 3b's real /otp signup
 
 psql() { docker exec "$DB_CONTAINER" psql -U postgres -d postgres -Atc "$1"; }
 psql_out() { docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "$1" 2>&1; }
@@ -204,6 +206,17 @@ OUT=$(psql_out "insert into auth.users (id, instance_id, aud, role, email, raw_u
 check_error "signup without display_name rolls back" "$OUT" "display_name is required"
 check "no orphaned auth user" "0" \
   "$(psql "select count(*) from auth.users where id='66666666-6666-6666-6666-666666666666'")"
+
+# --- 3b. real /otp signup (the client's actual registration path) --------------
+echo "== 3b. register via /otp (real client path): account + users row =="
+R=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "${AUTH}/otp?redirect_to=http://localhost:3000/auth/confirm" \
+  -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+  -d '{"email":"'"$OTP_EMAIL"'","data":{"display_name":"Otp Real"}}')
+check "/otp: new email signs up (200)" "200" "$R"
+OTP_ID=$(psql "select id from auth.users where email='$OTP_EMAIL'")
+check "/otp: users row pending (autoconfirmed locally)" "pending|true|Otp Real" \
+  "$(psql "select status || '|' || (email_confirmed_at is not null) || '|' || display_name from public.users where id='$OTP_ID'")"
 
 NEWBIE_JWT=$(mint_jwt "$NEWBIE_ID")
 check "awaiting-approval screen: self-read works" "pending" \
@@ -346,6 +359,8 @@ check "sign-in: invalid email 400" "400" "$(fn_code "$R")"
 echo "== 10. cleanup: back to seed state =="
 psql "delete from auth.identities where user_id='$NEWBIE_ID'" > /dev/null
 psql "delete from auth.users where id='$NEWBIE_ID'" > /dev/null   # cascades to users
+psql "delete from auth.identities where user_id in (select id from auth.users where email='$OTP_EMAIL')" > /dev/null
+psql "delete from auth.users where email='$OTP_EMAIL'" > /dev/null # cascades to users
 psql "delete from public.assets where s3_key='test/gallery.jpg'" > /dev/null
 check "users back to the 3 seed rows" "3" "$(psql 'select count(*) from public.users')"
 check "user_roles back to the 3 seed rows" "3" "$(psql 'select count(*) from public.user_roles')"
