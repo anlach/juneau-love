@@ -79,7 +79,7 @@
 <div class="card">
 	<h2 class="display" style="font-size: 2rem">Sign in</h2>
 	<p class="sub">
-		There’s no password here. Tell us your email and we’ll send you a link that signs you in.
+		Tell us your email and we’ll send you a link that signs you in.
 	</p>
 
 	{#if auth.linkError}

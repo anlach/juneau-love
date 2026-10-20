@@ -33,7 +33,7 @@
 {:else}
 	<!-- anonymous (and during the initial client-side check): public invitation -->
 	<section class="hero center">
-		<p class="kicker">juneau &amp; riley</p>
+		<p class="kicker">morgan &amp; andrew</p>
 		<h1 class="display" style="font-size: 4.5rem; margin: 0.2rem 0">You’re invited</h1>
 		<p class="sub" style="max-width: 34ch; margin: 0 auto">
 			This is a private corner of the internet for our wedding — register with your email
