@@ -11,10 +11,12 @@
 // checks the final signature.
 //
 // Part 2 runs only when S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY and
-// S3_BUCKET are in the environment: a live round-trip against Hippius
-// S3 using nothing but this signer — presigned PUT (200), presigned GET
-// (200, pinned content-type, byte-identical), anonymous GET (403), then
-// header-auth DELETE cleanup.
+// S3_BUCKET are in the environment: a live round-trip against whatever
+// S3 the S3_* env points at (Hippius in prod, the local stack's
+// storage S3 protocol when S3_PATH_PREFIX etc. are set — see
+// supabase/config.toml) using nothing but this signer: presigned PUT
+// (200), presigned GET (200, pinned content-type, byte-identical),
+// anonymous GET (403), then header-auth DELETE cleanup.
 
 import {
   amzTimestamp,
@@ -189,9 +191,10 @@ check("amzTimestamp", amzTimestamp(new Date("2015-08-30T12:36:00.789Z")) === "20
 const accessKeyId = Deno.env.get("S3_ACCESS_KEY_ID") ?? "";
 const secretAccessKey = Deno.env.get("S3_SECRET_ACCESS_KEY") ?? "";
 const bucket = Deno.env.get("S3_BUCKET") ?? "";
+const pathPrefix = (Deno.env.get("S3_PATH_PREFIX") ?? "").replace(/\/+$/, "");
 
 if (accessKeyId && secretAccessKey && bucket) {
-  console.log(`\n[live] round-trip against ${Deno.env.get("S3_ENDPOINT") ?? "https://s3.hippius.com"}/${bucket}`);
+  console.log(`\n[live] round-trip against ${Deno.env.get("S3_ENDPOINT") ?? "https://s3.hippius.com"}${pathPrefix}/${bucket}`);
   const endpoint = (Deno.env.get("S3_ENDPOINT") ?? "https://s3.hippius.com").replace(/\/+$/, "");
   // 1x1 transparent PNG.
   const png = Uint8Array.from(
@@ -230,11 +233,12 @@ if (accessKeyId && secretAccessKey && bucket) {
     `status=${getRes.status} content-type=${getRes.headers.get("content-type")} bytes=${body.length}/${png.length}`,
   );
 
-  const anon = await fetch(`${endpoint}/${bucket}/${key}`);
+  const objectPath = `${pathPrefix}/${bucket}/${key}`;
+  const anon = await fetch(`${endpoint}${objectPath}`);
   check("live anonymous GET denied", anon.status === 403, `status=${anon.status}`);
 
-  const delHeaders = await signedRequestHeaders("DELETE", `/${bucket}/${key}`, await sha256Hex(""));
-  const delRes = await fetch(`${endpoint}/${bucket}/${key}`, { method: "DELETE", headers: delHeaders });
+  const delHeaders = await signedRequestHeaders("DELETE", objectPath, await sha256Hex(""));
+  const delRes = await fetch(`${endpoint}${objectPath}`, { method: "DELETE", headers: delHeaders });
   check("live cleanup DELETE", delRes.status === 204 || delRes.status === 200, `status=${delRes.status}`);
 } else {
   console.log("\n[live] skipped — set S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY and S3_BUCKET to run the live round-trip");

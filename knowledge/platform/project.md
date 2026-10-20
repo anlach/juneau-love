@@ -2,8 +2,8 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T23:15:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T05:29:10Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
 ---
 
 # Supabase project
@@ -28,41 +28,54 @@ The schema is designed in the [db bundle](../db/) and implemented as
 project. `.env.example` documents the client env:
 `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`.
 
-## Assets S3 (Hippius)
+## Assets S3 (Hippius, local stack)
 
-The gallery's image bytes live in a **private Hippius S3 bucket**
-([assets](../db/assets.md) explains why not Supabase Storage):
+The gallery's image bytes live in a **private `juneau-assets` bucket**
+([assets](../db/assets.md) explains why not Supabase Storage). Hosted
+traffic uses Hippius S3; the local CLI stack serves the **same S3
+protocol** out of its storage container, so local dev exercises the real
+asset flow without Hippius credentials:
 
-| | |
-|---|---|
-| endpoint | `https://s3.hippius.com` — the only host; path-style addressing (`/bucket/key`) |
-| region | `decentralized` (the value to sign with; `GetBucketLocation` returns `us-east-1`, but the client still signs `decentralized`) |
-| bucket | `juneau-assets` — private (default policy, no public access; the key in the environment can do bucket-scoped ops, but account-level `ListBuckets` is 403) |
-| credentials | Hippius access key (`hip_…` id) + secret, held only as edge-function secrets (see [Secrets](#secrets)) |
+| | Hippius (hosted) | Local stack |
+|---|---|---|
+| endpoint | `https://s3.hippius.com` | `http://127.0.0.1:54321` (origin) |
+| path prefix | — (bucket at `/`) | `/storage/v1/s3` — objects live at `/storage/v1/s3/<bucket>/<key>`, and the prefix is part of the **signed** canonical path (see `S3_PATH_PREFIX` in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)) |
+| region | `decentralized` (the value to sign with; `GetBucketLocation` returns `us-east-1`, but the client still signs `decentralized`) | `local` |
+| bucket | `juneau-assets` — private (default policy, no public access; the key in the environment can do bucket-scoped ops, but account-level `ListBuckets` is 403) | `juneau-assets` — a storage bucket that must be created per stack (it survives normal restarts but not `supabase db reset`; see [Local development](#local-development-differs-from-hosted)) |
+| credentials | Hippius access key (`hip_…` id) + secret, held only as edge-function secrets (see [Secrets](#secrets)) | the CLI's built-in local-stack defaults (stable constants, printed by `supabase status`) — committed in `supabase/config.toml` `[edge_runtime.secrets]`, not secrets |
 
-Hippius-specific SigV4 quirks (verified against the live gateway on
-2026-10-18; encoded in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)
-and covered by
-[`supabase/tests/s3-presign.ts`](../../supabase/tests/s3-presign.ts)):
+SigV4 quirks shared by **both** endpoints (verified against the live
+Hippius gateway on 2026-10-18 and against local storage-api v1.82.1 on
+2026-10-20; encoded in
+[`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) and covered by
+[`supabase/tests/s3-presign.ts`](../../supabase/tests/s3-presign.ts), whose
+live round-trip works against either):
 
 - The scope terminator is **`aws4_request`**, not AWS's standard
-  `request` (Hippius' own SigV4 test suite uses it).
+  `request` (Hippius' own SigV4 test suite uses it; the local
+  storage-api signs with it too).
 - Requests must carry a content hash: header-auth requests send
   `x-amz-content-sha256` (sha256 of the body, or `UNSIGNED-PAYLOAD`);
   presigned (query-auth) URLs carry
   `X-Amz-Content-Sha256=UNSIGNED-PAYLOAD` as a query parameter.
+
+Hippius-specific behaviour (does **not** apply to the local stack):
+
 - Presigned URL expiry caps at **7 days**; the asset functions use 15
   minutes.
 - **CORS is handled by the gateway**, not bucket config: any-origin
   preflight returns 204 with `Access-Control-Allow-Origin: *` (and
   `PutBucketCors` is unsupported), so the browser can follow presigned
-  URLs and PUT straight from `juneau.love`.
+  URLs and PUT straight from `juneau.love`. (Local: preflight returns
+  200 with the same `*` origin.)
 - A presigned PUT's signed `Content-Type` is **not enforced**: a PUT
   with a different `Content-Type` also succeeds, and the type actually
   sent is what gets stored. The client sends the declared type; the
   [asset-url](../api/asset-url.md) function pins
   `response-content-type` from the DB row on every GET, so a drifted
   stored type degrades to a broken image, not a wrong type served.
+  (Local: a `Content-Type` mismatch fails SigV4 verification with 403 —
+  the signed header is enforced by the signature itself.)
 - `DeleteBucketPolicy` and multipart upload are unsupported.
 
 ## Required dashboard settings (not in migrations)
@@ -100,8 +113,8 @@ Per [Client authentication](../api/client-auth.md):
 | service role key | edge functions only (secrets) | client bundle, repo |
 | Resend API key | `RESEND_API_KEY` edge function secret | repo, client env |
 | Email sender | `EMAIL_FROM` edge function secret (verified Resend sender) | repo, client env |
-| S3 access key id | `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius)) | repo, client env |
-| S3 secret access key | `S3_SECRET_ACCESS_KEY` edge function secret | repo, client env |
+| S3 access key id | hosted: `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius-local-stack)); local: `config.toml` (CLI default, not a secret) | client env |
+| S3 secret access key | hosted: `S3_SECRET_ACCESS_KEY` edge function secret; local: `config.toml` | client env |
 | S3 bucket name | `S3_BUCKET` edge function secret (`juneau-assets`) | repo, client env |
 | anon key | public by design (RLS is the boundary); also the `SUPABASE_ANON_KEY` edge function secret the asset functions use to call PostgREST as the user | — it ships in the browser bundle anyway |
 
@@ -126,6 +139,37 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   persists in the volume). In the current CLI, `functions deploy` is
   hosted-only — it demands an access token even with a local stack
   running.
+- **Function env lives in `[edge_runtime.secrets]`** in
+  `supabase/config.toml` — exposed to every local edge function as a
+  container env var. (CLI 2.121+ rejects `[functions.<name>.env]` tables:
+  `supabase start` fails with `invalid keys: env`. The section name says
+  secrets, but plain local-dev values work fine — the local S3 config
+  lives there, below.) Set `SITE_URL = "http://localhost:3000"`, matching
+  `[auth] site_url` — the functions-config and secrets are snapshotted
+  into the runtime at `supabase start`, so restart after changing them.
+  Without it, functions fall back to the `https://juneau.love` default,
+  and GoTrue's `generate_link` **silently rewrites any `redirect_to`
+  whose origin doesn't match its configured `site_url` to the bare
+  configured site URL** — magic links then land on `/` instead of
+  `/login` (verified 2026-10-20, GoTrue v2.197.0: mismatched origin
+  rewritten, same-origin paths preserved). On the hosted project the
+  default matches the dashboard `site_url`, so nothing is needed there.
+- **The local asset flow uses the local stack's S3 protocol** — the
+  asset functions run unchanged against
+  `http://127.0.0.1:54321/storage/v1/s3` instead of Hippius (see
+  [Assets S3](#assets-s3-hippius-local-stack)). `config.toml`
+  `[edge_runtime.secrets]` carries the `S3_*` values (endpoint, path
+  prefix, region, bucket, CLI-default credentials). The `juneau-assets`
+  storage bucket must exist in local storage — create it once after a
+  fresh `supabase start` or `supabase db reset` (service role from
+  `supabase status --output env`):
+
+  ```sh
+  curl -sS -X POST http://127.0.0.1:54321/storage/v1/bucket \
+    -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H 'Content-Type: application/json' \
+    -d '{"id":"juneau-assets","name":"juneau-assets","private":true}'
+  ```
 - **Email autoconfirm is on locally** (`GOTRUE_MAILER_AUTOCONFIRM=true`) —
   API signups are confirmed immediately, so the confirmation-link path
   cannot be exercised locally. Hosted keeps confirmation enabled.

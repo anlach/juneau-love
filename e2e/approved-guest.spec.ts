@@ -7,6 +7,8 @@ import {
 	createUnconfirmedUser,
 	confirmEmail,
 	deleteAuthUser,
+	deleteAssetsForUser,
+	getUserRow,
 	setUserStatus
 } from './helpers';
 
@@ -59,21 +61,31 @@ test.describe('approved guest', () => {
 		await expect(page.getByRole('heading', { name: /not available to you/i })).toBeVisible();
 	});
 
-	test('upload degrades gracefully when S3 is not configured', async ({ page }) => {
-		// The local edge runtime has no S3 secrets, so asset-upload-url
-		// reports 'unavailable'; the UI must say so, never fake a success.
-		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
-		await expect(page).toHaveURL('/');
-		await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
-		await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
+	test('guest uploads a photo end-to-end against the local S3 stack', async ({ page }) => {
+		// Local stack: the edge runtime has the storage S3 protocol configured
+		// (config.toml [edge_runtime.secrets]), so a real upload works — the
+		// presigned PUT and GET both go to 127.0.0.1:54321/storage/v1/s3.
+		// Clean up afterwards so the empty-state test stays valid next run
+		// (finally: runs even when an assertion below fails).
+		try {
+			await openAuthLink(page, GUEST_EMAIL, 'magiclink');
+			await expect(page).toHaveURL('/');
+			await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
+			await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
 
-		const [fileChooser] = await Promise.all([
-			page.waitForEvent('filechooser'),
-			page.getByRole('button', { name: /add a photo/i }).click()
-		]);
-		await fileChooser.setFiles([{ name: 'test.png', mimeType: 'image/png', buffer: PNG_1X1 }]);
+			const [fileChooser] = await Promise.all([
+				page.waitForEvent('filechooser'),
+				page.getByRole('button', { name: /add a photo/i }).click()
+			]);
+			await fileChooser.setFiles([{ name: 'e2e.png', mimeType: 'image/png', buffer: PNG_1X1 }]);
 
-		await expect(page.getByText(/aren.t available in this environment/i)).toBeVisible();
+			// Success message, then the photo renders from the presigned GET URL.
+			await expect(page.getByText(/added — thank you/i)).toBeVisible();
+			await expect(page.getByRole('img', { name: /a shared photo/i })).toBeVisible();
+		} finally {
+			const row = await getUserRow(GUEST_EMAIL);
+			if (row) await deleteAssetsForUser(row.id);
+		}
 	});
 });
 

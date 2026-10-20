@@ -3,7 +3,7 @@ type: edge-function
 title: asset-upload-url (presigned image upload)
 description: "Edge function that issues a one-off presigned S3 PUT (15-min TTL) for an approved guest — key chosen server-side, content-type and size limits enforced up front."
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T23:15:00Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
 ---
 
 # asset-upload-url
@@ -34,12 +34,13 @@ Content-Type: application/json
    malicious client can never target another user's key or an
    admin-seeded key.
 4. Sign a presigned PUT (15-minute TTL) with the declared
-   `Content-Type` as a signed header (the Hippius gateway does not
+   `Content-Type` as a signed header (on Hippius the gateway does not
    enforce it — see [Known gaps](#known-gaps-accepted-for-v1)).
 5. Return `{ s3_key, upload_url, expires_at }`. The client then:
    1. `PUT`s the bytes to `upload_url` with the matching
-      `Content-Type` header (CORS is handled by the Hippius gateway —
-      see [Supabase project](../platform/project.md#assets-s3-hippius)).
+      `Content-Type` header (CORS is handled by the S3 endpoint —
+      Hippius gateway hosted, local storage-api in local dev; see
+      [Supabase project](../platform/project.md#assets-s3-hippius-local-stack)).
    2. On a 200 from the PUT, inserts the [assets](../db/assets.md) row
       via PostgREST (`user_id` = `auth.uid()`, `s3_key`/`content_type`/
       `byte_size` as returned). The row appears in every approved
@@ -64,12 +65,14 @@ Content-Type: application/json
   cleanup is an open question.
 - No magic-byte validation of the uploaded bytes yet — the limits check
   the declared headers only. Revisit if abuse appears.
-- The presigned PUT's signed `Content-Type` is **not enforced** by the
-  Hippius gateway: a PUT with a different `Content-Type` also succeeds,
-  and the type actually sent is what gets stored (verified 2026-10-18).
-  The client is expected to send the declared type; a mismatch degrades
-  to a broken image, because [asset-url](asset-url.md) pins
-  `response-content-type` from the row on every GET — not a wrong type
-  served or a visibility hole.
+- The presigned PUT's signed `Content-Type` is **not enforced by the
+  Hippius gateway**: a PUT with a different `Content-Type` also
+  succeeds, and the type actually sent is what gets stored (verified
+  2026-10-18). The client is expected to send the declared type; a
+  mismatch degrades to a broken image, because
+  [asset-url](asset-url.md) pins `response-content-type` from the row on
+  every GET — not a wrong type served or a visibility hole. (Local dev:
+  the storage S3 endpoint enforces the signed header by signature — a
+  mismatch 403s.)
 - A `filename` is accepted for possible logging/future display but
   plays no role in the key.

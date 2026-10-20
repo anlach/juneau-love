@@ -2,7 +2,7 @@
 type: edge-function
 title: send-login-link (sign in / resend link)
 description: Publicly invokable edge function that emails a fresh GoTrue magiclink login link to a given email, but only if the user is registered and approved; 10-minute cooldown per user.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T05:29:10Z }
 verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T20:33:20Z }
 ---
 
@@ -40,7 +40,10 @@ Content-Type: application/json
 2. **Generate the link:** call GoTrue admin `POST /auth/v1/admin/generate_link`
    (service role) with `{ email, type: "magiclink",
    redirect_to: "https://juneau.love/login" }` → `action_link`. GoTrue
-   stores the token and owns its lifetime.
+   stores the token and owns its lifetime. The redirect origin must match
+   GoTrue's configured `site_url` or GoTrue silently rewrites it (local
+   `SITE_URL` function env — [project
+   notes](../platform/project.md), Local development).
    Request/response shape verified locally (GoTrue v2.197.0): the
    response is the full user object plus
    - `action_link` — the verify-endpoint URL to email:

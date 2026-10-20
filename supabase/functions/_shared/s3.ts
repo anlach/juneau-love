@@ -16,12 +16,35 @@
 //   full AWS SDK into free-tier edge functions is overkill for presigning.
 //   Verified against the official AWS SigV4 test vectors (supabase/tests/
 //   s3-presign.ts) and against the live service.
+//
+// Local dev: the local stack's storage-api serves the same S3 protocol
+// (same SigV4 scheme, `aws4_request` terminator, `X-Amz-Content-Sha256`
+// handling — verified 2026-10-20 against storage-api v1.82.1), but objects
+// live under an origin-relative path prefix: /storage/v1/s3/<bucket>/<key>
+// (Kong strips /storage/v1 before forwarding; storage-api re-prepends its
+// S3_PROTOCOL_PREFIX to the canonical URI, so the prefix must be part of
+// the *signed* path, not just the request URL). Set S3_PATH_PREFIX to
+// "/storage/v1/s3" (with S3_ENDPOINT as the bare origin
+// http://127.0.0.1:54321) to test against the local stack; leave it unset
+// for Hippius. The S3_* values for the local stack are the CLI's built-in
+// defaults — see supabase/config.toml [edge_runtime.secrets].
 
 const encoder = new TextEncoder();
 
-/** Environment for the assets bucket. Set via `supabase secrets set`. */
+/**
+ * Environment for the assets bucket.
+ * Hosted: set via `supabase secrets set`. Local stack: see
+ * [edge_runtime.secrets] in supabase/config.toml.
+ */
 export const S3 = {
+  /** Origin (scheme://host[:port]) the object URLs are built against. */
   endpoint: (Deno.env.get("S3_ENDPOINT") ?? "https://s3.hippius.com").replace(/\/+$/, ""),
+  /**
+   * Origin-relative path between the origin and the bucket, e.g.
+   * "/storage/v1/s3" for the local stack. Empty for Hippius. Both the
+   * request URL and the signed canonical path include it.
+   */
+  pathPrefix: (Deno.env.get("S3_PATH_PREFIX") ?? "").replace(/\/+$/, ""),
   region: Deno.env.get("S3_REGION") ?? "decentralized",
   bucket: Deno.env.get("S3_BUCKET") ?? "",
   accessKeyId: Deno.env.get("S3_ACCESS_KEY_ID") ?? "",
@@ -179,7 +202,7 @@ export interface PresignInput {
 export async function presignS3ObjectUrl(input: PresignInput): Promise<{ url: string; expiresAt: string }> {
   if (!s3Configured()) throw new Error("S3 env not configured (S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY)");
   const host = new URL(S3.endpoint).host;
-  const path = `/${S3.bucket}/${input.key.split("/").map(rfc3986).join("/")}`;
+  const path = `${S3.pathPrefix}/${S3.bucket}/${input.key.split("/").map(rfc3986).join("/")}`;
   const timestamp = input.timestamp ?? amzTimestamp();
   const dateStamp = timestamp.slice(0, 8);
   const scope = `${dateStamp}/${S3.region}/s3/aws4_request`;
@@ -222,6 +245,10 @@ export async function presignS3ObjectUrl(input: PresignInput): Promise<{ url: st
  * Headers for a direct (header-auth) request to the bucket — used by admin
  * tooling and tests (e.g. DeleteObject to clean up), never by the edge
  * functions themselves.
+ *
+ * `path` is the full signed path: origin-relative, including S3.pathPrefix
+ * if configured (e.g. `/storage/v1/s3/juneau-assets/<key>` locally,
+ * `/juneau-assets/<key>` on Hippius).
  */
 export async function signedRequestHeaders(
   method: string,

@@ -3,14 +3,15 @@ type: db-table
 title: assets
 description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T23:15:00Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
 ---
 
 # assets
 
 One row per image the site shows. The **bytes live in a private
-external S3 bucket** (Hippius — endpoint, credentials, and gateway
-quirks in [Supabase project](../platform/project.md#assets-s3-hippius)) — not in the GitHub
+external S3 bucket** (hosted: Hippius; local dev: the local stack's
+storage S3 — endpoints, credentials, and gateway quirks in [Supabase
+project](../platform/project.md#assets-s3-hippius-local-stack)) — not in the GitHub
 repo and not in Supabase Storage (the Supabase instance is on the free
 tier; this table keeps image weight off its file-storage quota). This
 table is the authorization boundary: [RLS](#rls) decides who may see a
