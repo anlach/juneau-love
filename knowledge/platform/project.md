@@ -224,10 +224,12 @@ export SUPABASE_DB_PASSWORD='<postgres password>'
 supabase db push        # applies new migrations as postgres (owner bypass)
 supabase db advisors    # RLS / schema health check after changes
 
-# edge functions (secrets first; send-login-link is public):
+# edge functions (secrets first; send-login-link and
+# notify-registration are public — --no-verify-jwt persists that):
 supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
 supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
 supabase functions deploy send-login-link --no-verify-jwt
+supabase functions deploy notify-registration --no-verify-jwt
 supabase functions deploy registration-decision
 supabase functions deploy asset-url
 supabase functions deploy asset-upload-url

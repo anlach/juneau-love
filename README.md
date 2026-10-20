@@ -84,8 +84,10 @@ user, approve the row, insert the admin role in the SQL editor) — see
 supabase secrets set RESEND_API_KEY=<key> EMAIL_FROM='juneau.love <notify@juneau.love>'
 supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
 
-# Then deploy. send-login-link is the only public function:
+# Then deploy. send-login-link and notify-registration are the public
+# functions (called with no JWT): --no-verify-jwt persists that setting.
 supabase functions deploy send-login-link --no-verify-jwt
+supabase functions deploy notify-registration --no-verify-jwt
 supabase functions deploy registration-decision
 supabase functions deploy asset-url
 supabase functions deploy asset-upload-url
@@ -132,6 +134,12 @@ e2e.
 
 Push to `main` — the GitHub Actions workflow in `.github/workflows/deploy.yml` builds the site
 and deploys it to GitHub Pages.
+
+One-time setup: set the repository variables `PUBLIC_SUPABASE_URL` and
+`PUBLIC_SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions →
+Variables → New repository variable) — the static build inlines them at
+build time and fails without them (both are public by design; plain
+variables, not secrets).
 
 In the repo settings, set **Pages → Build and deployment → Source** to **GitHub Actions**.
 
