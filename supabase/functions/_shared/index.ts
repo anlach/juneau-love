@@ -85,13 +85,14 @@ export async function generateMagicLink(
 }
 
 /**
- * Send one email through Resend. Returns false (and logs) on any failure,
- * including a missing RESEND_API_KEY — the caller decides how to treat
- * that (send-login-link treats a missing key as dev mode;
- * registration-decision reports email_sent: false).
+ * Send one email through Resend (to one or more recipients). Returns false
+ * (and logs) on any failure, including a missing RESEND_API_KEY — the
+ * caller decides how to treat that (send-login-link and notify-registration
+ * treat a missing key as dev mode; registration-decision reports
+ * email_sent: false).
  */
 export async function sendEmail(
-  to: string,
+  to: string | string[],
   subject: string,
   html: string,
   text: string,
@@ -107,7 +108,7 @@ export async function sendEmail(
       authorization: `Bearer ${RESEND_API_KEY}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ from, to: [to], subject, html, text }),
+    body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], subject, html, text }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -150,9 +151,20 @@ export async function restAsUser(
   return { status: res.status, data };
 }
 
+/** Escape user-controlled text for interpolation into the email HTML. */
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
- * The one email shape the site sends: a heading, an intro line, and the
- * magiclink button. Both auth functions use it (different heading/intro).
+ * Guest-facing login-link email: a heading, an intro line, and the
+ * magiclink button. Used by send-login-link and registration-decision
+ * (different heading/intro).
  */
 export function loginLinkEmail(name: string, intro: string, link: string):
   { subject: string; html: string; text: string } {
@@ -174,5 +186,63 @@ export function loginLinkEmail(name: string, intro: string, link: string):
 </body>
 </html>`;
   const text = `${name ? `Hi ${name}, ` : ""}${intro}\n\nSign in: ${link}\n\n${footer}`;
+  return { subject, html, text };
+}
+
+/**
+ * The admin "new registration" alert (notify-registration): the guest's
+ * details plus approve/reject deep links into the registrations page.
+ * The links are plain UX — the decision itself goes through
+ * registration-decision with the admin's own session, so no link carries
+ * any privilege. `approved` rows are never alerted about; see the concept
+ * doc for the idempotency stamp.
+ */
+export function registrationAlertEmail(opts: {
+  name: string;
+  email: string;
+  registeredAt: string;
+  confirmed: boolean;
+  approveUrl: string;
+  rejectUrl: string;
+  listUrl: string;
+}): { subject: string; html: string; text: string } {
+  const { name, email, registeredAt, confirmed, approveUrl, rejectUrl, listUrl } = opts;
+  const subject = `New registration: ${name} (${email})`;
+  const when = new Date(registeredAt).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const confirmNote = confirmed
+    ? "Their email is confirmed — you can approve right away."
+    : "Their email isn’t confirmed yet — approving unlocks once they confirm it (you can reject in the meantime).";
+  const signInNote =
+    "You’ll need to be signed in as an admin for the buttons to work. " +
+    "If you didn’t expect this, the registrations page shows who registered with what address.";
+  const html = `<!doctype html>
+<html>
+<body style="margin:0;padding:24px;background:#faf7f6;">
+  <div style="max-width:480px;margin:0 auto;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <p style="font-size:18px;color:#5c4048;margin:0 0 8px;">juneau.love</p>
+    <h1 style="font-size:20px;color:#1a1a1a;font-weight:600;margin:0 0 12px;">New registration: ${esc(name)}</h1>
+    <table style="font-size:15px;color:#333;border-collapse:collapse;margin:0 0 4px;">
+      <tr><td style="padding:2px 16px 2px 0;color:#777;">Name</td><td style="font-weight:600;">${esc(name)}</td></tr>
+      <tr><td style="padding:2px 16px 2px 0;color:#777;">Email</td><td>${esc(email)}</td></tr>
+      <tr><td style="padding:2px 16px 2px 0;color:#777;">Registered</td><td>${when}</td></tr>
+      <tr><td style="padding:2px 16px 2px 0;color:#777;">Email confirmed</td><td>${confirmed ? "yes" : "not yet"}</td></tr>
+    </table>
+    <p style="color:#555;font-size:14px;line-height:1.6;margin:16px 0;">${confirmNote} ${signInNote}</p>
+    <p style="margin:24px 0;">
+      <a href="${approveUrl}" style="display:inline-block;background:#b76e79;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:15px;margin-right:8px;">Approve</a>
+      <a href="${rejectUrl}" style="display:inline-block;background:#ffffff;color:#5c4048;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:15px;border:1px solid #d9b8be;">Reject</a>
+    </p>
+    <p style="color:#777;font-size:13px;line-height:1.6;"><a href="${listUrl}" style="color:#b76e79;">View all registrations</a></p>
+  </div>
+</body>
+</html>`;
+  const text =
+    `New registration: ${name}\n\n` +
+    `Name: ${name}\nEmail: ${email}\nRegistered: ${when}\nEmail confirmed: ${confirmed ? "yes" : "not yet"}\n\n` +
+    `${confirmNote} ${signInNote}\n\n` +
+    `Approve: ${approveUrl}\nReject: ${rejectUrl}\nAll registrations: ${listUrl}`;
   return { subject, html, text };
 }

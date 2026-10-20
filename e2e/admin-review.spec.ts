@@ -89,4 +89,65 @@ test.describe('admin registration review', () => {
 		});
 		expect(await getRoleNames(after.id)).not.toContain('guest');
 	});
+
+	// The admin notification email deep-links into this page
+	// (?approve=<id> / ?reject=<id>): the link is a confirm prompt only —
+	// the decision still goes through registration-decision.
+	test('approve deep link prompts and approves', async ({ page }) => {
+		const email = await makeConfirmedPendingUser('Eve DeepLink');
+		created.push(email);
+		const before = await getUserRow(email);
+		if (!before) throw new Error(`missing user row for ${email}`);
+		await signInAsAdmin(page);
+
+		await page.goto(`/registrations?approve=${before.id}`);
+		await expect(page.getByRole('heading', { name: /registrations/i })).toBeVisible();
+
+		// The banner names the guest before any state change.
+		const banner = page.locator('.decision-banner');
+		await expect(banner).toContainText(/approve eve deeplink/i);
+		await expect(banner).toContainText(email);
+
+		await banner.getByRole('button', { name: 'Approve' }).click();
+
+		// Banner consumed, row flipped, deep-link param stripped.
+		await expect(banner).toHaveCount(0);
+		await expect(page.getByRole('status')).toContainText(/approved/i);
+		await expect(page.locator('tr', { hasText: email }).locator('.badge')).toHaveText('approved');
+		expect(page.url()).not.toContain('approve=');
+
+		const after = await waitFor(async () => {
+			const r = await getUserRow(email);
+			return r && r.status === 'approved' ? r : null;
+		});
+		expect(await getRoleNames(after.id)).toContain('guest');
+	});
+
+	test('reject deep link prompts and rejects', async ({ page }) => {
+		const email = await makeConfirmedPendingUser('Frank DeepLink');
+		created.push(email);
+		const before = await getUserRow(email);
+		if (!before) throw new Error(`missing user row for ${email}`);
+		await signInAsAdmin(page);
+
+		await page.goto(`/registrations?reject=${before.id}`);
+		const banner = page.locator('.decision-banner');
+		await expect(banner).toContainText(/reject frank deeplink/i);
+
+		await banner.getByRole('button', { name: 'Reject' }).click();
+
+		await expect(banner).toHaveCount(0);
+		await expect(page.locator('tr', { hasText: email }).locator('.badge')).toHaveText('rejected');
+		expect(page.url()).not.toContain('reject=');
+	});
+
+	test('deep link for an unknown registration shows a notice', async ({ page }) => {
+		await signInAsAdmin(page);
+
+		await page.goto('/registrations?approve=99999999-9999-9999-9999-999999999999');
+		const banner = page.locator('.decision-banner');
+		await expect(banner).toContainText(/couldn.t find that registration/i);
+		await banner.getByRole('button', { name: 'Got it' }).click();
+		await expect(banner).toHaveCount(0);
+	});
 });

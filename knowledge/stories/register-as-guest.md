@@ -1,8 +1,8 @@
 ---
 type: user-story
 title: Register as a guest
-description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
+description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision. The admins are alerted about the new registration by email (with approve/reject links) as soon as it is made.
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T15:50:00Z }
 ---
 
 # Register as a guest
@@ -23,7 +23,11 @@ site.
    creates the registration row in `pending` → GoTrue emails a
    **confirm-your-email** link (**step 1 of 2 for initial login**). No
    session yet; the FE shows a
-   "check your email to confirm your address" screen.
+   "check your email to confirm your address" screen. In passing the
+   FE fires [notify-registration](../api/notify-registration.md) — the
+   admins get an email about the new registration (best effort; a
+   fallback re-fires it once the guest is signed in on the
+   awaiting-approval screen).
 4. Guest clicks the confirmation link → the account is confirmed and a
    session is established in this browser → the guest lands on the
    **"awaiting approval"** screen (no site content yet).
@@ -51,6 +55,14 @@ site.
 
 ## Business rules
 
+- **The admins are alerted about every new registration:** the
+  registration emails every admin the guest's details with approve and
+  reject deep links — at most one alert per registration (idempotent
+  stamp), and only for the *new* `pending` registration, never again on
+  re-approval. A guest who never confirms their email is only alerted
+  about if the signup-time call got through (the fallback needs a
+  session); such rows still appear in the admin's list. Mechanics in
+  [notify-registration](../api/notify-registration.md).
 - **One registration per email** — the register form probes for an
   existing email before signing up (the probe emails that account a login
   link in passing), the magic-link endpoint never creates a duplicate
@@ -76,9 +88,10 @@ site.
 ## Depends on
 
 - [users](../db/users.md) (row-creation trigger, confirmation mirror,
-  guard trigger, RLS)
+  guard trigger, RLS, `admin_notified_at` stamp)
 - [Client authentication](../api/client-auth.md) (signup + confirmation
   contract)
+- [notify-registration](../api/notify-registration.md) (the admin alert)
 - [Sign in with a login link](/sign-in-with-login-link.md) (what step 2
   looks like)
 - [Access by approval status](/access-by-approval-status.md) (what the

@@ -69,6 +69,16 @@
 			formError = `Registration didn’t go through (${error.message}). Please try again.`;
 			return;
 		}
+		// Alert the admins a registration is waiting. Best effort and never
+		// blocks the guest: if this call doesn't go through, the layout fires
+		// the same notification once the guest is signed in on the
+		// awaiting-approval screen, and the function is idempotent (the
+		// users.admin_notified_at stamp — knowledge/api/notify-registration.md).
+		void supabase
+			.functions.invoke('notify-registration', { body: { email: trimmedEmail } })
+			.then(({ error: notifyError }) => {
+				if (notifyError) console.warn('notify-registration failed:', notifyError);
+			});
 		registeredEmail = trimmedEmail;
 		registered = true;
 	}

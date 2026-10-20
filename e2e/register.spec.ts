@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { deleteAuthUser, getUserRow } from './helpers';
+import { deleteAuthUser, getUserRow, waitFor } from './helpers';
 
 /**
  * Registration through the real form. The browser submits name + email;
@@ -32,6 +32,14 @@ test.describe('register', () => {
 		const row = await getUserRow(email);
 		expect(row?.status).toBe('pending');
 		expect(row?.display_name).toBe('Register Rita');
+
+		// The register page fired notify-registration (dev mode locally):
+		// the stamp proves the signup-time admin alert path ran.
+		const stamped = await waitFor(async () => {
+			const r = await getUserRow(email);
+			return r?.admin_notified_at ? r : null;
+		});
+		expect(stamped.status).toBe('pending');
 	});
 
 	test('re-registering an existing email points to sign-in', async ({ page }) => {

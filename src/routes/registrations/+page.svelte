@@ -18,6 +18,37 @@
 	let notice = $state<{ tone: 'ok' | 'err'; text: string } | null>(null);
 	let acting = $state<string | null>(null); // row id mid-flight
 
+	// Approve/reject deep link from the admin notification email
+	// (knowledge/api/notify-registration.md): /registrations?approve=<id>
+	// (?reject=<id>; if both are present, approve wins). The link itself
+	// carries no privilege — this is a confirm prompt, and the actual
+	// decision still goes through the admin-gated registration-decision
+	// function. Read once at load: the link arrives as a full document load
+	// from the email, not from SPA navigation.
+	function parseRequested(): { id: string; decision: 'approve' | 'reject' } | null {
+		const params = new URLSearchParams(window.location.search);
+		const id = params.get('approve') ?? params.get('reject');
+		if (!id) return null;
+		return { id, decision: params.get('approve') ? 'approve' : 'reject' };
+	}
+	let requested = $state(parseRequested());
+	const requestedRow = $derived.by(() => {
+		const req = requested; // local for TS narrowing inside the derived
+		return req ? rows.find((r) => r.id === req.id) ?? null : null;
+	});
+
+	function clearRequested() {
+		requested = null;
+		history.replaceState(null, '', '/registrations');
+	}
+
+	async function decideFromBanner(row: Registration) {
+		const decision = requested?.decision;
+		if (!decision) return;
+		await decide(row, decision);
+		clearRequested();
+	}
+
 	const isReadAdmin = $derived(auth.kind === 'ready' && hasPermission('registrations:read'));
 	const canApprove = $derived(hasPermission('registrations:approve'));
 	const canReject = $derived(hasPermission('registrations:reject'));
@@ -109,6 +140,47 @@
 {:else if isReadAdmin}
 	<h1 class="display" style="font-size: 2.6rem">Registrations</h1>
 	<p class="sub">Newest first. A guest can only be approved once their email is confirmed.</p>
+
+	{#if requested}
+		{#if loading}
+			<!-- the list (and therefore the linked row) isn't loaded yet -->
+		{:else if !requestedRow}
+			<div class="card decision-banner">
+				<p>We couldn’t find that registration — it may already have been handled.</p>
+				<div class="spread"><button class="btn ghost" onclick={clearRequested}>Got it</button></div>
+			</div>
+		{:else if requestedRow.status !== 'pending'}
+			<div class="card decision-banner">
+				<p><strong>{requestedRow.display_name}</strong> is already {requestedRow.status} — there’s nothing to do.</p>
+				<div class="spread"><button class="btn ghost" onclick={clearRequested}>Got it</button></div>
+			</div>
+		{:else}
+			<div class="card decision-banner">
+				{#if requested.decision === 'approve'}
+					<p><strong>Approve {requestedRow.display_name}</strong> ({requestedRow.email})? They’ll get a sign-in link by email.</p>
+				{:else}
+					<p><strong>Reject {requestedRow.display_name}</strong> ({requestedRow.email})? They won’t get access to the site.</p>
+				{/if}
+				{#if requested.decision === 'approve' && !requestedRow.email_confirmed_at}
+					<p class="sub">Their email isn’t confirmed yet — approving unlocks once they confirm it. You can reject in the meantime.</p>
+				{/if}
+				<div class="spread">
+					<button
+						class="btn {requested.decision === 'reject' ? 'danger' : ''}"
+						disabled={
+							acting === requestedRow.id ||
+							(requested.decision === 'approve' && (!canApprove || !requestedRow.email_confirmed_at)) ||
+							(requested.decision === 'reject' && !canReject)
+						}
+						onclick={() => void decideFromBanner(requestedRow)}
+					>
+						{requested.decision === 'approve' ? 'Approve' : 'Reject'}
+					</button>
+					<button class="btn ghost" onclick={clearRequested}>Not now</button>
+				</div>
+			</div>
+		{/if}
+	{/if}
 
 	{#if notice}
 		<p class="msg {notice.tone}" role="status">{notice.text}</p>

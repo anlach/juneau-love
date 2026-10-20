@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { createUnconfirmedUser, openAuthLink, deleteAuthUser, getUserRow } from './helpers';
+import { createUnconfirmedUser, openAuthLink, deleteAuthUser, getUserRow, waitFor } from './helpers';
 
 /**
  * Gate 1 (email confirmation) and the "awaiting approval" state.
@@ -50,5 +50,27 @@ test.describe('pending registration', () => {
 		// The pending screen, not the photos.
 		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
 		await expect(page.getByRole('heading', { name: /photos/i })).toHaveCount(0);
+	});
+
+	test('awaiting-approval screen fires the admin notification (fallback)', async ({ page }) => {
+		const email = await createUnconfirmedUser('Fallback Frank');
+		created.push(email);
+
+		// Created via the raw admin API: the signup-time notify call (register
+		// page) never ran, so the stamp starts null. The layout fallback is
+		// what alerts the admins once the guest is signed in and pending.
+		const before = await getUserRow(email);
+		expect(before?.admin_notified_at).toBeNull();
+
+		await openAuthLink(page, email, 'signup');
+		await expect(page).toHaveURL('/');
+		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
+
+		const after = await waitFor(async () => {
+			const r = await getUserRow(email);
+			return r?.admin_notified_at ? r : null;
+		});
+		// Alerted, but the approval gate still holds.
+		expect(after.status).toBe('pending');
 	});
 });

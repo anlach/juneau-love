@@ -18,9 +18,13 @@ export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface Profile {
 	id: string;
+	email: string;
 	display_name: string | null;
 	status: ApprovalStatus;
 	email_confirmed_at: string | null;
+	/** Set by notify-registration when the admins were alerted about this
+	 *  pending registration (null until then — the layout's fallback uses it). */
+	admin_notified_at: string | null;
 }
 
 export interface AuthSnapshot {
@@ -95,7 +99,7 @@ export async function refreshState(): Promise<void> {
 	const [profileRes, permsRes] = await Promise.all([
 		supabase
 			.from('users')
-			.select('id, display_name, status, email_confirmed_at')
+			.select('id, email, display_name, status, email_confirmed_at, admin_notified_at')
 			.eq('id', u.id)
 			.maybeSingle(),
 		supabase.from('user_permissions').select('permission').eq('user_id', u.id)
@@ -115,7 +119,14 @@ export async function refreshState(): Promise<void> {
 	auth.message = null;
 	auth.user = u;
 	auth.profile = p
-		? { id: p.id, display_name: p.display_name, status: p.status, email_confirmed_at: p.email_confirmed_at }
+		? {
+				id: p.id,
+				email: p.email,
+				display_name: p.display_name,
+				status: p.status,
+				email_confirmed_at: p.email_confirmed_at,
+				admin_notified_at: p.admin_notified_at
+			}
 		: null;
 	auth.perms = (permsRes.data ?? []).map((r: { permission: string }) => r.permission);
 }
@@ -149,7 +160,7 @@ export function initAuth(): void {
 
 		if (error) {
 			auth.linkError =
-				'That link has already been used or has expired. Head back and request a fresh one.';
+				'That link has already been used or has expired. Request a fresh one.';
 		}
 
 		const { data } = await supabase.auth.getSession();

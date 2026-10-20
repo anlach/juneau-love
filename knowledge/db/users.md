@@ -2,7 +2,7 @@
 type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password and log in via short-lived GoTrue magiclinks (no credential lives in this table); email-verification state is mirrored from auth.users.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T15:50:00Z }
 ---
 
 # users
@@ -32,6 +32,7 @@ verification state is mirrored here as `email_confirmed_at`; approval is
 | `display_name` | `text` NOT NULL | Name shown to the admin and on the site. Set at registration, editable by the user themselves only. |
 | `email_confirmed_at` | `timestamptz` | Mirrored from `auth.users.email_confirmed_at` by a trigger when the guest clicks the confirmation link. NULL = not verified yet. Drives the "verified" indicator on the registrations page; `registration-decision` refuses to approve while NULL. |
 | `last_login_link_sent_at` | `timestamptz` | When [send-login-link](../api/send-login-link.md) last emailed a login link; drives the 10-minute resend cooldown. Written only by the edge function (service role). |
+| `admin_notified_at` | `timestamptz` | When [notify-registration](../api/notify-registration.md) last alerted the admins about this pending registration; the idempotency stamp that makes each registration notify at most once. Written only by that function (service role). |
 | `status` | `text` NOT NULL DEFAULT `'pending'` | CHECK `in ('pending','approved','rejected')`. The approval state; the only column ever changed by an admin, and only through the `registration-decision` edge function (never by a client). |
 | `created_at` | `timestamptz` NOT NULL DEFAULT `now()` | Registration time. |
 | `updated_at` | `timestamptz` NOT NULL DEFAULT `now()` | Set to `now()` by the guard trigger on every allowed update. |
@@ -47,6 +48,7 @@ create table public.users (
   status text not null default 'pending'
     check (status in ('pending','approved','rejected')),
   last_login_link_sent_at timestamptz,
+  admin_notified_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -133,6 +135,12 @@ $$;
   ([List registrations](../api/registration-list.md)). No login
   credential is on this table at all (links are GoTrue-owned tokens), so
   the list never exposes any.
+- **Admin-notification stamp — edge function only.**
+  [notify-registration](../api/notify-registration.md) sets
+  `admin_notified_at` after alerting the admins about a pending
+  registration (the stamp makes the alert idempotent — at most one email
+  per registration; a failed send is not stamped, so a later call
+  retries).
 - **Status changes — edge function only.** See
   [registration-decision](../api/registration-decision.md): it validates
   the caller is an admin, applies the transition, and handles the
@@ -185,15 +193,18 @@ row); the `BEFORE UPDATE` guard trigger enforces the fine rules by
 functions, `postgres` for the owner console — and `auth.uid()`):
 
 - **`service_role` DB role** (edge functions): may change `status` only
-  (transition must be allowed, table above) plus
-  `last_login_link_sent_at`. Nothing else.
+  (transition must be allowed, table above) plus the two notification
+  timestamps, `last_login_link_sent_at` and `admin_notified_at`. Nothing
+  else.
 - **`postgres` role** (our own `SECURITY DEFINER` triggers, plus the
   owner console / migrations / bootstrap): unrestricted — the accepted
   owner bypass; the sync triggers only ever touch their own column.
 - **Self** (`authenticated`, `auth.uid() = user_id`): may change
-  `display_name` only. A hand-crafted self-update of `status` or
-  `email_confirmed_at` is rejected here even though RLS allows the row —
-  this is what stops a user from claiming their own verification.
+  `display_name` only. A hand-crafted self-update of `status`,
+  `email_confirmed_at`, `last_login_link_sent_at`, or `admin_notified_at`
+  is rejected here even though RLS allows the row — this is what stops a
+  user from claiming their own verification, gaming the link cooldown, or
+  suppressing their own admin notification.
 - Anything else → raise.
 - Always: `updated_at` forced to `now()`.
 - On INSERT → `status` forced to `'pending'` and `email_confirmed_at`

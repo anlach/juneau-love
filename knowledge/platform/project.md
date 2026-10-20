@@ -2,7 +2,7 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T05:29:10Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T15:50:00Z }
 verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
 ---
 
@@ -90,19 +90,21 @@ Per [Client authentication](../api/client-auth.md):
   setting only (see [Local development](#local-development-differs-from-hosted)).
 - Auth: JWT expiry **1 day** (86400s), refresh token expiry **365 days**
   (the GoTrue maximum).
-- Edge functions: `send-login-link` **publicly invokable** (called with
-  no JWT — locally via `[functions.send-login-link] verify_jwt = false`
-  in `supabase/config.toml`, on deploy via `--no-verify-jwt`);
-  `registration-decision` requires an authenticated caller (it re-verifies
-  admin itself). There is **no login edge function** — the login link is
-  exchanged client-side.
+- Edge functions: `send-login-link` and `notify-registration`
+  **publicly invokable** (called with no JWT — locally via
+  `[functions.<name>] verify_jwt = false` in `supabase/config.toml`, on
+  deploy via `--no-verify-jwt`); `registration-decision` requires an
+  authenticated caller (it re-verifies admin itself). There is **no
+  login edge function** — the login link is exchanged client-side.
 - Transactional email provider: **Resend** (the free tier covers a
   wedding's volume). It serves both Supabase's auth emails (confirmation
   link, via the project's email/SMTP settings) and the edge functions'
-  login-link emails (function secrets `RESEND_API_KEY` + `EMAIL_FROM`).
-  Locally, without `RESEND_API_KEY`, `send-login-link` prints the link to
-  the function log and counts as sent (dev mode); `registration-decision`
-  reports `email_sent: false`.
+  transactional emails — login links (`send-login-link`) and the
+  new-registration admin alert (`notify-registration`) (function secrets
+  `RESEND_API_KEY` + `EMAIL_FROM`).
+  Locally, without `RESEND_API_KEY`, both public functions print the
+  email to the function log and count as sent (dev mode);
+  `registration-decision` reports `email_sent: false`.
 
 ## Secrets
 
@@ -138,7 +140,14 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   `asset-upload-url`). Fix: `supabase stop && supabase start` (data
   persists in the volume). In the current CLI, `functions deploy` is
   hosted-only — it demands an access token even with a local stack
-  running.
+  running. If the CLI is unavailable and you recreate the
+  `supabase_edge_runtime_*` container by hand (`docker create` with the
+  env from the old container plus the updated
+  `SUPABASE_INTERNAL_FUNCTIONS_CONFIG` JSON), it also needs the
+  CLI-injected bootstrap file `/root/index.ts` (not in the image) —
+  without it the worker exits with `failed to bootstrap runtime: could
+  not find an appropriate entrypoint`. Recover it from a healthy stack
+  or an old shell log and `docker cp` it in.
 - **Function env lives in `[edge_runtime.secrets]`** in
   `supabase/config.toml` — exposed to every local edge function as a
   container env var. (CLI 2.121+ rejects `[functions.<name>.env]` tables:

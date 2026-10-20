@@ -36,6 +36,11 @@
 #   - registration-decision keeps runtime JWT verification locally
 #     (send-login-link opts out via config.toml), so a tokenless call gets
 #     a 401 before the function body runs.
+#   - notify-registration also opts out of JWT verification (config.toml):
+#     it is public by design and dedupes itself via users.admin_notified_at.
+#   - New edge functions are invisible to the local runtime until the stack
+#     restarts (supabase stop && supabase start) — the function registry is
+#     snapshotted at start (knowledge/platform/project.md).
 #
 # Usage:
 #   npx supabase start                    # one-time
@@ -144,6 +149,8 @@ check "no login_passcodes table (magiclink design)" "0" \
   "$(psql "select count(*) from information_schema.tables where table_schema='public' and table_name='login_passcodes'")"
 check "users.last_login_link_sent_at exists" "1" \
   "$(psql "select count(*) from information_schema.columns where table_schema='public' and table_name='users' and column_name='last_login_link_sent_at'")"
+check "users.admin_notified_at exists" "1" \
+  "$(psql "select count(*) from information_schema.columns where table_schema='public' and table_name='users' and column_name='admin_notified_at'")"
 check "seed: admin approved with admin+guest roles" "approved|admin,guest" \
   "$(psql "select u.status, string_agg(r.name,',' order by r.name) from public.users u left join public.user_roles ur on ur.user_id=u.id left join public.roles r on r.id=ur.role_id where u.id='$ADMIN_ID' group by u.status")"
 check "seed: guest approved with guest role" "guest|approved" \
@@ -222,6 +229,26 @@ NEWBIE_JWT=$(mint_jwt "$NEWBIE_ID")
 check "awaiting-approval screen: self-read works" "pending" \
   "$(rest GET "$NEWBIE_JWT" "users?select=status" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["status"] if d else "ERR")')"
 check "pending: guest_names still 0" "0" "$(count_json "$(rest GET "$NEWBIE_JWT" "guest_names")")"
+
+# --- 3c. notify-registration: admin alert for the new registration --------
+echo "== 3c. notify-registration: admin alert for a new registration (dev mode) =="
+check "admin lookup: join finds the seeded admin" "admin@local.dev" \
+  "$(psql "select string_agg(distinct u.email, ',') from public.users u join public.user_roles ur on ur.user_id=u.id join public.roles r on r.id=ur.role_id where r.name='admin'")"
+R=$(fn notify-registration - '{"email":"newbie@local.dev"}')
+check "notify: pending registration 200 sent=true (dev mode)" "true" "$(fn_json "$R" "str(d['sent']).lower()")"
+check "notify: admin_notified_at stamped" "t" \
+  "$(psql "select admin_notified_at is not null from public.users where id='$NEWBIE_ID'")"
+R=$(fn notify-registration - '{"email":"newbie@local.dev"}')
+check "notify: second call no-ops (already_notified)" "false|already_notified" \
+  "$(fn_json "$R" "str(d['sent']).lower() + '|' + d.get('reason','')")"
+R=$(fn notify-registration - '{"email":"ghost@local.dev"}')
+check "notify: unknown email -> not_found" "false|not_found" \
+  "$(fn_json "$R" "str(d['sent']).lower() + '|' + d.get('reason','')")"
+R=$(fn notify-registration - '{"email":"guest@local.dev"}')
+check "notify: approved email -> not_pending" "false|not_pending" \
+  "$(fn_json "$R" "str(d['sent']).lower() + '|' + d.get('reason','')")"
+R=$(fn notify-registration - '{"email":"not-an-email"}')
+check "notify: invalid email 400" "400" "$(fn_code "$R")"
 
 # --- 4. confirm email (mirror trigger) ----------------------------------------
 echo "== 4. confirm email: mirror trigger copies timestamp =="
@@ -325,10 +352,12 @@ R=$(rest PATCH "$NEWBIE_JWT" "users?id=eq.$NEWBIE_ID" '{"email_confirmed_at":"20
 check_error "self: cannot claim own verification" "$R" "you may only change your own display_name"
 R=$(rest PATCH "$NEWBIE_JWT" "users?id=eq.$NEWBIE_ID" '{"last_login_link_sent_at":"2026-01-01T00:00:00Z"}')
 check_error "self: cannot game the link cooldown" "$R" "you may only change your own display_name"
+R=$(rest PATCH "$NEWBIE_JWT" "users?id=eq.$NEWBIE_ID" '{"admin_notified_at":"2026-01-01T00:00:00Z"}')
+check_error "self: cannot touch admin_notified_at" "$R" "you may only change your own display_name"
 R=$(rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"display_name":"hax"}')
-check_error "service_role: cannot change display_name" "$R" "service_role may only change status and last_login_link_sent_at"
+check_error "service_role: cannot change display_name" "$R" "service_role may only change status, last_login_link_sent_at, or admin_notified_at"
 R=$(rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"email":"hax@local.dev"}')
-check_error "service_role: cannot change email" "$R" "service_role may only change status and last_login_link_sent_at"
+check_error "service_role: cannot change email" "$R" "service_role may only change status, last_login_link_sent_at, or admin_notified_at"
 R=$(rest PATCH "$SVC_KEY" "users?id=eq.$NEWBIE_ID" '{"status":"pending"}')
 check_error "service_role: approved -> pending is disallowed" "$R" "disallowed status transition"
 OUT=$(psql_out "set role authenticated; select public.sync_user_role();")

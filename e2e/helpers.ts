@@ -93,6 +93,8 @@ export interface UserRow {
 	display_name: string;
 	status: 'pending' | 'approved' | 'rejected';
 	email_confirmed_at: string | null;
+	/** Set by notify-registration when the admins were alerted (null until then). */
+	admin_notified_at: string | null;
 }
 
 function restHeaders() {

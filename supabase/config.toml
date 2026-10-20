@@ -25,6 +25,13 @@ major_version = 17
 # it re-verifies the caller is an admin either way.
 verify_jwt = false
 
+[functions.notify-registration]
+# Publicly invokable (called with no JWT at signup time). Idempotent via
+# users.admin_notified_at and it only emails admins about real pending
+# registrations, so an anonymous caller gains nothing (see the function
+# header).
+verify_jwt = false
+
 [edge_runtime.secrets]
 # Function env for the local stack: exposed to every local edge function as
 # a container env var. Origin must match [auth] site_url — GoTrue rewrites
