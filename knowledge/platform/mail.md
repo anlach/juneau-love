@@ -2,7 +2,7 @@
 type: project-notes
 title: Mail (self-hosted Maddy)
 description: The self-hosted mail stack on the VPS — Maddy for delivery, the HTTP->SMTP relay that edge functions must use, DNS records, and the Supabase SMTP/secret settings it requires.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T19:30:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-21T18:22:12Z }
 ---
 
 # Mail (self-hosted Maddy)
@@ -21,7 +21,7 @@ provider and no mailbox — juneau.love sends, it does not receive.
 browser → Supabase edge functions (Deno)
               │  HTTPS POST /send (Bearer token)
               ▼
-        Caddy  mail.juneau.love:443   (Let's Encrypt, auto)
+        nginx mail.juneau.love:443   (certbot-managed cert, shared vhost)
               │  reverse_proxy
               ▼
         relay.ts  127.0.0.1:8080      (zero-dependency Deno service)
@@ -35,7 +35,7 @@ browser → Supabase edge functions (Deno)
 ```
 
 The install/runbook lives in `infra/mail/` in the repo (relay source,
-`maddy.conf`, `Caddyfile`, systemd unit, step-by-step README).
+`maddy.conf`, `nginx-mail.conf`, systemd unit, step-by-step README).
 
 ## Why the relay exists
 
@@ -54,7 +54,7 @@ email over HTTPS and speaks SMTP to Maddy on loopback.
 |---|---|---|
 | Maddy | The mail server: DKIM signing, direct MX delivery | send-only; loopback `:25` hand-off + `:587` STARTTLS submission; no local mailboxes |
 | relay.ts (`infra/mail/relay.ts`) | HTTP→SMTP for the edge functions | loopback only, bearer-token auth, ≤10 recipients / 256 KB per part, multipart/alternative (text+html), RFC 2047 subjects, fixed From |
-| Caddy | TLS at `mail.juneau.love:443` | Let's Encrypt auto (http-01, port 80 open); the only public mail-adjacent surface |
+| nginx (mail vhost) | TLS at `mail.juneau.love:443` | server blocks on the existing nginx (which fronts other sites on :80/:443); certbot webroot issues + auto-renews; the only public mail-adjacent surface |
 | GoTrue SMTP | Auth emails (confirmation, signup) | Supabase "custom SMTP" project setting → `mail.juneau.love:587`; Supabase caps this at 30 msg/h by default (Auth → Rate limits) — far above a wedding's volume |
 
 ## DNS (juneau.love)
@@ -74,7 +74,11 @@ email over HTTPS and speaks SMTP to Maddy on loopback.
 |---|---|---|
 | relay token | VPS: `/etc/mail-relay/env` (mode 0600); Supabase: `MAIL_RELAY_TOKEN` edge function secret (same value, both sides must agree) | repo |
 | Maddy submission password (for GoTrue) | VPS: only as the hash in `/etc/maddy/smtp_passwd`; the plaintext is stored only as `smtp_pass` in the Supabase project SMTP setting | repo |
-| DNS provider API token (only if Maddy's ACME manages the :587 cert) | VPS: `/etc/maddy/maddy.conf` | repo |
+
+The TLS cert for `mail.juneau.love` is a Let's Encrypt cert managed by
+**certbot** (webroot through the nginx ACME-challenge location) and covers
+both the relay vhost and Maddy's :587 listener — maddy reloads it from
+disk on renewal. No DNS-provider API token is involved.
 
 `MAIL_RELAY_URL` (`https://mail.juneau.love`) is a hosted setting, not a
 secret — it still lives as an edge function secret so the deploy is one
@@ -101,10 +105,10 @@ notes](/project.md), Local development.
 ## Operations
 
 - Logs: `journalctl -u maddy` (delivery/bounces), `-u mail-relay` (one
-  line per accepted send), `-u caddy` (TLS).
+  line per accepted send), `-u nginx` (TLS / relay front).
 - The VPS needs **outbound** TCP 25 (provider-dependent — GCP blocks it;
   Hetzner-style unblock requests exist). Inbound 25 is never public
   (Maddy's listener is loopback-only).
 - Bounces are logged, not delivered (no mailboxes).
-- Cert renewal: Maddy ACME dns-01 automatic (falls back to the staging
-  CA on failure), or manual for the Option-B cert.
+- Cert renewal: certbot's timer renews `mail.juneau.love` automatically
+  (webroot via nginx); no restart needed on either side.

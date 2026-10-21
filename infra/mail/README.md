@@ -52,6 +52,12 @@ HTTP endpoint. Maddy itself has no HTTP API.
 Deliberately **no MX record**: juneau.love does not receive mail.
 (DNSSEC, if enabled on the zone, must cover these too.)
 
+> Registrar note (juneau.love / Namecheap): the old `efoward*`
+> registrar-forwarding MX records are auto-managed by the domain's
+> **Mail Setup** dropdown, not individually editable. Setting Mail Setup
+> to **No Mail Service** (and saving) removes all of them plus the eforward
+> SPF record; the records above are then added as custom zone entries.
+
 ## 2. Install Maddy
 
 Per the [Maddy docs](https://maddy.email/tutorials/setting-up/) —
@@ -101,8 +107,16 @@ chown maddy:maddy /etc/maddy/smtp_passwd && chmod 600 /etc/maddy/smtp_passwd
 Validate and start:
 
 ```sh
-sudo maddy config test
+sudo maddy verify-config    # maddy 0.9.5: no `maddy config` subcommand
 systemctl enable --now maddy
+```
+
+Gotcha: `verify-config` run as root generates the DKIM key files as root;
+the service (running as `maddy`) then fails to start with
+`open dkim_keys/...: permission denied`. If that happens:
+
+```sh
+sudo chown -R maddy:maddy /var/lib/maddy
 ```
 
 On first delivery Maddy generates the DKIM key under
@@ -114,6 +128,10 @@ that file's content as the `mail._domainkey.juneau.love` TXT record
 
 ```sh
 curl -fsSL https://deno.land/install.sh | sh   # puts deno in ~/.deno/bin
+# the unit expects /usr/local/bin/deno — copy the real binary, do NOT
+# symlink: the service runs as mailrelay and cannot traverse a mode-750
+# home directory, so a symlink into ~/.deno fails at EXEC (203).
+sudo cp ~/.deno/bin/deno /usr/local/bin/deno
 install -d /opt/mail-relay /etc/mail-relay
 cp relay.ts /opt/mail-relay/
 cp env.example /etc/mail-relay/env
@@ -132,17 +150,23 @@ systemctl daemon-reload
 systemctl enable --now mail-relay
 ```
 
-## 4. Install Caddy
+## 4. TLS front for the relay (nginx)
+
+The VPS already runs nginx (other sites + certbot), and :443 belongs to
+nginx, so the relay is fronted by **nginx server blocks, not Caddy**
+(the original `Caddyfile` in this dir is superseded). Add the two blocks
+from [`nginx-mail.conf`](nginx-mail.conf) to the sites config and reload:
 
 ```sh
-# e.g. https://caddyserver.com/docs/install — adjust for your distro
-cp Caddyfile /etc/caddy/Caddyfile   # or merge into the existing one
-systemctl reload caddy
+# merge nginx-mail.conf into the vhost config, then:
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Caddy auto-provisions the Let's Encrypt cert for `mail.juneau.love`
-(http-01 — port 80 must be reachable). Watch `journalctl -u caddy -f`
-once.
+TLS: the `mail.juneau.love` cert is issued and renewed by **certbot
+webroot** (the :80 block serves `/.well-known/acme-challenge/` from
+`/var/www/certbot`; everything else 301s to https). The same cert files
+are what Maddy's :587 listener uses (Option B in `maddy.conf`), so one
+cert covers both. Watch `journalctl -u nginx -f` if the handshake misbehaves.
 
 ## 5. Verify
 
@@ -195,7 +219,7 @@ Then test a real signup (or a confirmation link) end to end.
 
 - **Logs:** `journalctl -u maddy` (delivery + bounce detail),
   `journalctl -u mail-relay` (one line per accepted send),
-  `journalctl -u caddy` (TLS).
+  `journalctl -u nginx` (TLS / relay front).
 - **Rate:** Supabase caps GoTrue's sending at 30 messages/hour by default
   with a custom SMTP (dashboard → Auth → Rate limits). A wedding's volume
   is far below that; the edge-function emails have no such cap — the
@@ -203,8 +227,10 @@ Then test a real signup (or a confirmation link) end to end.
   anti-spam.
 - **Bounces:** Maddy's queue/direct delivery handles retries on its own;
   with no local mailboxes, bounces are logged, not delivered anywhere.
-- **Certificate:** Option A (ACME dns-01) renews automatically; Maddy
-  retries against the staging CA and back off production on failure.
-  Option B renewals are yours to schedule.
+- **Certificate (deployed: Option B):** certbot's timer renews
+  `mail.juneau.love` automatically (webroot through nginx); maddy reloads
+  the cert from disk, so no restart is needed. (Option A — Maddy ACME
+  dns-01 — renews itself but needs a DNS-provider API token and was not
+  used here.)
 - **The relay accepts at most 10 recipients / 256 KB per part** —
   deliberately small; the site never sends bigger.
