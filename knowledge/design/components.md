@@ -2,7 +2,7 @@
 type: component
 title: Shared components and conventions
 description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid) plus the StateScreen component for the signed-in status screens."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T20:15:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T23:56:00Z }
 ---
 
 # Shared components
@@ -18,7 +18,8 @@ lived here: [Design tokens](/tokens.md).
 - Nav content is gated by auth state (the *rules* — which links appear for
   which status/permission — are the business rule in [Access by approval
   status](../stories/access-by-approval-status.md), not here):
-  - signed out → "Sign in" + "Register" (Register styled `.btn.small`)
+  - signed out → "Sign in" + "Register" (both plain nav links — no
+    button styling in the nav)
   - ready → "Photos" (approved only), "Registrations"
     (`registrations:read` only), the display name (`.who`, italic muted),
     "Sign out" (`.btn.small.ghost`, signs out and redirects home)

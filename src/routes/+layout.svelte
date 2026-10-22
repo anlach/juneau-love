@@ -51,7 +51,7 @@
 	<nav class="site-nav">
 		{#if auth.kind === 'anonymous'}
 			<a href="/login">Sign in</a>
-			<a class="btn small" href="/register">Register</a>
+			<a href="/register">Register</a>
 		{:else if auth.kind === 'ready'}
 			{#if status === 'approved'}
 				<a href="/gallery">Photos</a>
