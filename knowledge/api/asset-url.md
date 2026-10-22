@@ -2,8 +2,8 @@
 type: edge-function
 title: asset-url (presigned image GET URLs)
 description: "Edge function that exchanges asset ids for short-lived (15-min) presigned S3 GET URLs — but only for rows the caller's RLS allows. The only way browser code ever sees an image byte."
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
 ---
 
 # asset-url
@@ -70,4 +70,7 @@ Content-Type: application/json
   all — the anon-key-plus-user-token query *is* the visibility check.
 - **DB:** [assets RLS](../db/assets.md) is the actual visibility rule.
 - **S3:** bucket policy blocks all public access; keys are unguessable;
-  URL TTL is 15 minutes.
+  URL TTL is 15 minutes. CORS is handled by the S3 endpoint (Hippius
+  gateway hosted, local storage-api in local dev), so the browser can
+  follow the URLs straight from `juneau.love` (see [Supabase
+  project](../platform/project.md#assets-s3-hippius-local-stack)).

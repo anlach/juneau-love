@@ -2,8 +2,7 @@
 type: api-endpoint
 title: List registrations (admin)
 description: PostgREST read of all users rows that feeds the admin registrations table — display name, email, verified indicator, registration date, approval state, newest first.
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # List registrations

@@ -12,19 +12,50 @@
 --
 -- To act as one of these users locally, mint a JWT and use it as the
 -- Authorization bearer:
---   supabase gen jwt --role authenticated --user-id 11111111-1111-1111-1111-111111111111
+--   supabase gen bearer-jwt --role authenticated --sub 11111111-1111-1111-1111-111111111111
 
 -- 1. Auth users. The on_auth_user_created trigger creates the matching
 --    public.users rows in `pending`.
-insert into auth.users (id, email, raw_user_meta_data)
+--
+--    instance_id, aud and role have no column defaults in this GoTrue
+--    version (the app code sets them on real signups). GoTrue's user
+--    lookup filters on `instance_id = uuid.Nil AND aud = 'authenticated'
+--    AND is_sso_user = false`, so raw inserts that omit them make admin
+--    calls (e.g. generate_link) treat the user as missing and 500 with a
+--    duplicate-key error. The token columns have no DB defaults and
+--    GoTrue scans them into non-null Go strings, so they must be empty
+--    strings, not NULL. created_at/updated_at are set for tidiness.
+insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data,
+                        confirmation_token, recovery_token, email_change_token_new, email_change,
+                        created_at, updated_at)
 values
-  ('11111111-1111-1111-1111-111111111111', 'admin@local.dev',   '{"display_name": "Local Admin"}'),
-  ('22222222-2222-2222-2222-222222222222', 'guest@local.dev',   '{"display_name": "Local Guest"}'),
-  ('33333333-3333-3333-3333-333333333333', 'pending@local.dev', '{"display_name": "Local Pending"}')
+  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@local.dev',   '{"display_name": "Local Admin"}',   '', '', '', '', now(), now()),
+  ('22222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'guest@local.dev',   '{"display_name": "Local Guest"}',   '', '', '', '', now(), now()),
+  ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'pending@local.dev', '{"display_name": "Local Pending"}', '', '', '', '', now(), now())
+on conflict (id) do nothing;
+
+-- 1b. GoTrue email identities (one per user). A real signup creates one;
+--     some GoTrue paths resolve users via the identity row, so seed it to
+--     keep the local users realistic. identity_data mirrors what GoTrue
+--     writes for an email signup. (The `email` column is generated from
+--     identity_data and must not be written.)
+insert into auth.identities (id, user_id, provider, provider_id, identity_data, last_sign_in_at, created_at, updated_at)
+values
+  ('81111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', 'email', '82111111-1111-1111-1111-111111111111',
+   jsonb_build_object('sub','11111111-1111-1111-1111-111111111111','email','admin@local.dev','display_name','Local Admin','email_verified',true,'phone_verified',false),
+   now(), now(), now()),
+  ('83111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', 'email', '84111111-1111-1111-1111-111111111111',
+   jsonb_build_object('sub','22222222-2222-2222-2222-222222222222','email','guest@local.dev','display_name','Local Guest','email_verified',true,'phone_verified',false),
+   now(), now(), now()),
+  ('85111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', 'email', '86111111-1111-1111-1111-111111111111',
+   jsonb_build_object('sub','33333333-3333-3333-3333-333333333333','email','pending@local.dev','display_name','Local Pending','email_verified',false,'phone_verified',false),
+   now(), now(), now())
 on conflict (id) do nothing;
 
 -- 2. Confirm the admin + guest emails. Exercises on_auth_email_confirmed,
---    which mirrors the timestamp onto public.users.
+--    which mirrors the timestamp onto public.users. (auth.users.confirmed_at
+--    is a generated column — LEAST(email_confirmed_at, phone_confirmed_at) —
+--    so it derives automatically.)
 update auth.users
 set email_confirmed_at = now()
 where id in ('11111111-1111-1111-1111-111111111111',

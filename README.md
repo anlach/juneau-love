@@ -3,7 +3,10 @@
 Wedding website. SvelteKit frontend, prerendered with `adapter-static` and deployed to GitHub Pages.
 
 ## Coming Up
-Live updating photo slideshow and photo upload / gallery
+Live updating photo slideshow. (The gallery itself is in: approved guests
+see the shared photos and can upload JPEG/PNG/WebP up to 5 MB through the
+`asset-upload-url` / `asset-url` edge functions and the private Hippius S3
+bucket.)
 
 ## Development
 
@@ -14,13 +17,12 @@ npm run dev
 ## Build
 
 ```sh
-# Local preview (base path /)
-npm run build
-
-# Production build. The site is served from the root of the custom domain
-# (juneau.love), so no base path is needed.
-npm run build
+npm run build     # static site in build/ (preview with `npm run preview`)
+npm run check     # svelte-check
 ```
+
+The site is served from the root of the custom domain (juneau.love), so
+no base path is needed.
 
 ## Supabase
 
@@ -75,17 +77,88 @@ The first admin is bootstrapped out-of-band (dashboard → Auth → Users → Ad
 user, approve the row, insert the admin role in the SQL editor) — see
 [knowledge/db/users.md](knowledge/db/users.md#access-patterns).
 
+### Deploying edge functions
+
+```sh
+# Same one-time setup as above (CLI + link). Secrets first:
+supabase secrets set MAIL_RELAY_URL='https://mail.juneau.love' MAIL_RELAY_TOKEN='<token>'
+supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
+
+# Then deploy. send-login-link and notify-registration are the public
+# functions (called with no JWT): --no-verify-jwt persists that setting.
+supabase functions deploy send-login-link --no-verify-jwt
+supabase functions deploy notify-registration --no-verify-jwt
+supabase functions deploy registration-decision
+supabase functions deploy asset-url
+supabase functions deploy asset-upload-url
+```
+
+The S3 secrets are the Hippius credentials for the private `juneau-assets`
+bucket — endpoint, signing quirks, and seeding are documented in
+[knowledge/platform/project.md](knowledge/platform/project.md#assets-s3-hippius).
+The presigner is validated by `deno run -A supabase/tests/s3-presign.ts`
+(vectors always; live round-trip when `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`, `S3_BUCKET` are in the environment).
+
+### Mail (self-hosted Maddy)
+
+There is no third-party email provider. Login links, the new-registration
+admin alert, and Supabase's own auth emails (confirmation, signup) are sent
+from a VPS running **Maddy**. Edge functions can't open raw TCP (the edge
+runtime denies `Deno.connect`), so they POST to a small HTTP→SMTP **relay**
+on the VPS (Caddy fronts it with TLS), which hands off to Maddy over
+loopback; GoTrue connects to Maddy's `:587` submission port directly
+(Supabase custom SMTP, applied via the Management API).
+
+The full VPS install — Maddy, relay, Caddy, DNS (SPF/DKIM/DMARC/PTR),
+DKIM key publishing, the Supabase SMTP call — is
+[`infra/mail/README.md`](infra/mail/README.md); the design notes are in
+[knowledge/platform/mail.md](knowledge/platform/mail.md). The relay token is
+the one value shared between the VPS (`/etc/mail-relay/env`) and Supabase
+(`MAIL_RELAY_TOKEN` secret). Locally there is no relay: without
+`MAIL_RELAY_URL`/`MAIL_RELAY_TOKEN` the functions print emails to their log
+and count them as sent.
+
 ### Client environment
 
 Copy `.env.example` to `.env` and fill in `PUBLIC_SUPABASE_URL` /
 `PUBLIC_SUPABASE_ANON_KEY` (dashboard → Project Settings → API). The site is
 static, so these are baked in at build time and are public by design — never
-put the service role key or the DB password in the client env.
+put the service role key or the DB password in the client env. For local
+development against the local stack, point `.env` at `http://127.0.0.1:54321`
+(dev server origin must stay `http://localhost:3000`, matching
+`site_url` in `supabase/config.toml`).
+
+## E2E tests
+
+Playwright suite in `e2e/` exercises the real flows end to end against the
+local Supabase stack: sign-in link (eligibility, cooldown, one-shot
+magic links), registration confirmation, the approval gate, the guest
+gallery, and the admin approve/reject flow (asserting the RBAC role sync
+in the DB). Auth links are minted out-of-band with GoTrue's admin
+generate_link, standing in for the mail provider.
+
+```sh
+supabase start          # local stack, with seed data
+npx playwright test     # builds the site with --mode test (.env.test),
+                        # serves it on :4173, uses system Chromium
+```
+
+Tests run single-worker in file order (they share live Supabase state)
+and clean up the users they create. `.env.test` is committed — it targets
+the local stack's default JWT secret, so no local `.env` is needed for
+e2e.
 
 ## Deploy (site)
 
 Push to `main` — the GitHub Actions workflow in `.github/workflows/deploy.yml` builds the site
 and deploys it to GitHub Pages.
+
+One-time setup: set the repository variables `PUBLIC_SUPABASE_URL` and
+`PUBLIC_SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions →
+Variables → New repository variable) — the static build inlines them at
+build time and fails without them (both are public by design; plain
+variables, not secrets).
 
 In the repo settings, set **Pages → Build and deployment → Source** to **GitHub Actions**.
 
@@ -96,11 +169,15 @@ The custom domain is declared in the `CNAME` file at the repo root; the old URL
 
 `knowledge/` holds the project's OKF (Open Knowledge Format) bundles:
 `db` (Supabase schema, RLS), `api` (client API surface, auth), `design`
-(ux/ui), and `stories` (user stories, business rules). Routing rules and
+(ux/ui), `stories` (user stories, business rules), and `platform` (hosted
+Supabase project, secrets, the self-hosted mail stack). Routing rules and
 conventions live in `.agents/skills/juneau-knowledge/SKILL.md`.
 
 ## Notes
 
-- The "Lavishly Yours" font is bundled via `@fontsource/lavishly-yours` (imported in
-  `src/routes/+layout.svelte`), so the site has no external font dependency.
-- The RSVP section is a placeholder; wire it up to a backend later.
+- Two display fonts: "Lavishly Yours" (script, via `@fontsource/lavishly-yours`
+  imported in `src/routes/+layout.svelte`) and "Bona Nova" (serif body, local
+  trial TTFs in `static/fonts/` — swap for woff2 subsets before production).
+- The whole UI is client-rendered (SPA fallback `404.html`) except the public
+  landing `/`, which is prerendered; no user-specific data ever renders
+  server-side.

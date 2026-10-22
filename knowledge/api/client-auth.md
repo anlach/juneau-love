@@ -1,21 +1,28 @@
 ---
 type: auth-flow
-title: Client authentication (passwordless, passcode links)
-description: "No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the passcode login link after approval. The link is redeemed by an edge function for a Supabase session (1-day access token, 1-year refresh token, auto-refreshed and persisted by supabase-js)."
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-17T21:46:01Z }
+title: Client authentication (passwordless, login links)
+description: No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the login link in an email after approval. The link is a native GoTrue magiclink exchanged client-side for a Supabase session with stock supabase-js.
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
+verified:
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
 ---
 
 # Client authentication
 
 **Passwordless, two gates.** Users have no passwords. Getting access
-requires (1) confirming the registration email and (2) admin approval, after
-which the guest clicks a passcode link in an email. The whole user-facing
-auth surface is: register (email + display name), click a confirmation
-link, click a passcode link, or ask for a new link by entering an email.
-RLS remains the security boundary; the **service role** key lives only in
-the edge functions (`login-with-passcode`, `send-login-link`,
-`registration-decision`).
+requires (1) confirming the registration email and (2) admin approval,
+after which the guest clicks a login link in an email. The whole
+user-facing auth surface is: register (email + display name), click a
+confirmation link, click a login link, or enter an email to request a
+fresh link.
+
+RLS is the security boundary; the **service role** key lives only in the
+edge functions ([send-login-link](/send-login-link.md),
+[registration-decision](/registration-decision.md)). **There is no login
+edge function** — the login link is a native GoTrue magiclink exchanged
+client-side by stock supabase-js ([Trade-offs](#trade-offs)).
 
 ## Client setup
 
@@ -24,22 +31,22 @@ createClient(url, anonKey, {
   auth: {
     storage: localStorage,        // persisted session (not cookies — static site)
     persistSession: true,
-    detectSessionInUrl: true,     // picks up the signup confirmation code (and future OAuth); the passcode is NOT a GoTrue URL code
+    detectSessionInUrl: true,     // picks up the session from the URL fragment —
+                                  // both the confirmation redirect and the login
+                                  // link redirect carry it there (not in the query)
   },
 });
 ```
 
-## Token lifetimes (Supabase project settings — setup requirement)
+## Sessions
 
-- **Access token: 1 day** (JWT expiry setting = 86400s).
-- **Refresh token: 1 year** (refresh token expiry setting = 365 days, the
-  GoTrue maximum).
-- supabase-js auto-refreshes the access token from the refresh token; the
-  session persists in localStorage, so a returning visitor with a valid
-  refresh token never needs a link again.
-- The passcode link is therefore the **re-authentication path**: first
-  login, new device, cleared browser, or the refresh token lapsing after a
-  year.
+- Access token **1 day**, refresh token **1 year** (project settings —
+  [project notes](../platform/project.md)). supabase-js auto-refreshes
+  and persists the session in localStorage, so a returning visitor with a
+  valid refresh token never needs a link again.
+- The login link is therefore the **re-authentication path**: first
+  login, new device, cleared browser, or the refresh token lapsing after
+  a year.
 - Accepted trade-off: the 1-year refresh token is a bearer credential in
   localStorage (XSS-exposed). Fine at this site's scale; revisit if the
   threat model changes.
@@ -48,54 +55,91 @@ createClient(url, anonKey, {
 
 **Step 1 of initial login.**
 
-- `supabase.auth.signUp({ email, options: { data: { display_name }, emailRedirectTo: 'https://juneau.love/auth/confirm' } })`
-  — **no password**.
+- Registration goes through GoTrue's **magic-link endpoint**
+  (`POST /auth/v1/otp`):
+  `supabase.auth.signInWithOtp({ email, options: { data: { display_name },
+  emailRedirectTo: 'https://juneau.love/auth/confirm' } })`. The `/signup`
+  endpoint refuses an email-only body ("Signup requires a valid password")
+  — on the hosted project too, same GoTrue code — while the magic-link
+  endpoint signs an unknown email up with a server-generated credential
+  the guest never sees, and emails the link. (The magic-link endpoint is
+  on by default in GoTrue — there is no dashboard toggle to check;
+  [project notes](../platform/project.md).)
 - Email confirmation is **enabled** (project setting) → GoTrue emails a
   "confirm your email" link (Supabase auth email template, sent via the
-  project's email provider). **No session is created yet**; the FE shows a
-  session-independent "check your email to confirm your address" screen.
+  project's email provider). **No session is created yet**; the FE shows
+  a session-independent "check your email to confirm your address"
+  screen. (Locally, autoconfirm is on, so the account starts confirmed
+  and the email is already a session-granting magiclink — [project
+  notes](../platform/project.md).)
 - Backend side effect: the `auth.users` trigger creates the
   [users](../db/users.md) row in `pending`, unconfirmed.
-- Errors:
-  - email already registered → "already registered — sign in" (the sign-in
-    page is the email form; a rejected account gets its rejection screen
-    after signing in and cannot re-register).
-  - invalid email / invalid display name → stay on the form with the
-    message.
+- "Already registered" is detected client-side: the FE first probes the
+  same endpoint with `shouldCreateUser: false`, which succeeds only for a
+  known email → "already registered — sign in" (the sign-in page is the
+  email form; a rejected account gets its rejection screen after signing
+  in and cannot re-register). Side effect: the probe emails the returning
+  guest a fresh login link — what [Flow 3](#flow-3--request-a-link) does,
+  minus the cooldown.
+- Other errors (rate limit, malformed email) → stay on the form with the
+  message.
 
 ## Flow 1b — confirming the email
 
-1. The guest clicks the confirmation link
-   (`https://juneau.love/auth/confirm?code=...&type=signup` — a real
-   GoTrue code). `detectSessionInUrl: true` handles it: the account is
-   confirmed and **a session is established** in this browser.
+1. The guest clicks the confirmation link — it points at GoTrue's verify
+   endpoint (`/auth/v1/verify?token=...&type=signup&redirect_to=...`),
+   which 303-redirects to `https://juneau.love/auth/confirm` **with the
+   session in the URL fragment**; `detectSessionInUrl: true` picks it up
+   — the account is confirmed and **a session is established** in this
+   browser (same mechanism as the login link,
+   [Flow 2](#flow-2--log-in-via-the-login-link)).
 2. The mirror trigger copies `email_confirmed_at` onto the `users` row,
    so the admin's registrations table shows a verified indicator and the
    `registration-decision` function will allow approving this user.
 3. Layout: session + `status = 'pending'` → the **"awaiting approval"**
    screen (no site content yet) with a "check status" re-fetch.
 
-## Flow 2 — log in via passcode link
+## Flow 2 — log in via the login link
 
-1. The link is `https://juneau.love/login?code=<passcode>` — **step 2 of
-   initial login** (step 1 was the email confirmation). The guest may
-   already hold a session from step 1b — `setSession` simply replaces it;
-   on a new device there is no session yet. The page reads the code,
-   **strips it from the URL** (`history.replaceState`) so it never lingers
-   in history/bookmarks, and POSTs it to `login-with-passcode`.
-2. On success the function returns a Supabase session pair; the client
-   calls `supabase.auth.setSession({ access_token, refresh_token })`.
-   From then on it's plain supabase-js session management
-   (auto-refresh, persistence, `signOut`).
-3. Invalid/expired code → friendly "this link is no longer valid — request
-   a new one" state with a path to the email form.
+1. The link is a **native GoTrue magiclink**, generated server-side by
+   [send-login-link](/send-login-link.md) or
+   [registration-decision](/registration-decision.md) via GoTrue's admin
+   `generate_link` API and emailed to the guest. **Step 2 of initial
+   login** (step 1 was the email confirmation). The guest may already
+   hold a session from step 1b — the exchange simply replaces it; on a
+   new device there is no session yet.
+2. Click → the link points at GoTrue's verify endpoint
+   (`/auth/v1/verify?token=...&type=magiclink&redirect_to=...`), which
+   validates the token and **303-redirects to `https://juneau.love/login`
+   with the session in the URL fragment**:
+
+   ```
+   #access_token=...&refresh_token=...&token_type=bearer
+    &expires_in=...&expires_at=...&type=magiclink
+   ```
+
+   There is **no `code=` in the query to exchange** — the session tokens
+   *are* the redirect payload. `detectSessionInUrl` reads the fragment
+   and installs the session (stock supabase-js, no custom client code).
+   The page strips the fragment (`history.replaceState`) so it never
+   lingers in history/bookmarks. Verified locally (GoTrue v2.197.0):
+   the fragment session works against PostgREST, the refresh token
+   refreshes, and the link is **single-use** — a second click on the
+   same link redirects with `#error=access_denied&error_code=otp_expired`.
+3. From then on it's plain supabase-js session management (auto-refresh,
+   persistence, `signOut`).
+4. Expired / already-used / invalid link → the redirect carries
+   `#error=access_denied&error_code=...` in the fragment → a friendly
+   "this link is no longer valid — request a new one" state with a path
+   to the email form. GoTrue owns the token's lifetime; a fresh link is
+   one tap away.
 
 ## Flow 3 — request a link (the only "sign in")
 
 1. Sign-in page: a single email field.
 2. POST `send-login-link` `{ email }`:
-   - registered **and** approved → fresh (rotated) passcode + email sent →
-     "a link is on its way".
+   - registered **and** approved → a fresh GoTrue magiclink is generated
+     and emailed → "a link is on its way".
    - not registered → "that email isn't registered yet" (+ register CTA).
    - registered, not approved → "you're registered — approval is pending"
      (or the rejection message).
@@ -113,15 +157,28 @@ The layout fetches current-user state (own status + permissions) and
 routes to the right screen ([Access by approval
 status](../stories/access-by-approval-status.md)).
 
-## Project setup requirements
+## Trade-offs
 
-- Auth: **email confirmation enabled** (the confirmation link is step 1 of
-  initial login).
-- Auth: JWT expiry **1 day**, refresh token expiry **365 days**.
-- Edge functions: `login-with-passcode` and `send-login-link` must be
-  **publicly invokable** (called with no JWT); `registration-decision`
-  requires an authenticated caller and re-verifies admin itself.
-- Transactional email provider — **TBD** (Resend suggested; free tier
-  covers a wedding's volume). It serves both Supabase's auth emails
-  (confirmation link, via the project's email/SMTP settings) and the edge
-  functions' passcode emails.
+The login link is a native GoTrue magiclink rather than a credential we
+store and redeem ourselves: GoTrue generates, stores, expires, and
+validates the token, and the client exchanges it with stock supabase-js.
+Because GoTrue owns the token, **our schema stores no credential** — the
+only state we keep is the send-cooldown timestamp
+([users](../db/users.md) `last_login_link_sent_at`). Accepted
+trade-offs:
+
+- **GoTrue-managed lifetime, not a longer window we choose** (default ~1
+  hour; exact value and configurability unconfirmed). A stale link costs
+  one tap on the email form.
+- **One exchange per link (verified).** A second click on the same link
+  yields `error_code=otp_expired` — a second device requests a fresh
+  link, which is exactly the recovery flow.
+- **GoTrue stores a random password hash for email signups** — generated
+  server-side by the magic-link endpoint, unknown to and unusable by the
+  guest (the only UI entry point is the email link). "Passwordless" means
+  the guest holds no credential, not that `auth.users.password_hash` is
+  empty.
+- **No status re-check at redemption.** A link emailed before a later
+  rejection can still be exchanged — the rejected guest gets a session,
+  but RLS yields zero rows and the client shows the rejection screen.
+  Accepted at this site's scale.

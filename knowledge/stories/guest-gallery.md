@@ -2,8 +2,7 @@
 type: user-story
 title: Guest gallery
 description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. No thumbnails, no delete in v1."
-status: draft
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T03:00:23Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
 ---
 
 # Guest gallery
@@ -47,9 +46,8 @@ them to the public internet.
 ## Business rules
 
 - **Images live in the private external S3 bucket**, not the GitHub
-  repo and not Supabase Storage: the Supabase instance is on the free
-  tier (file storage is capped at 1 GB), so bytes go to storage we
-  already have. Supabase holds only [assets](../db/assets.md) metadata.
+  repo and not Supabase Storage — the rationale (free-tier storage cap)
+  is in [assets](../db/assets.md). Supabase holds only the metadata.
 - **Visibility = approval.** "Visible to an authorized guest" means
   `users.status = 'approved'` — the same rule that gates all guest
   content ([Access by approval status](/access-by-approval-status.md)).
@@ -64,8 +62,8 @@ them to the public internet.
   for v1.
 - **No thumbnails in v1:** full-size objects are served as-is; resizing
   and derived assets are deferred (open question).
-- **Orphan objects** from failed uploads are invisible and tolerated
-  in v1 (see [asset-upload-url](../api/asset-upload-url.md)).
+- **Orphan objects** from failed uploads are invisible and tolerated in
+  v1 (see [asset-upload-url](../api/asset-upload-url.md)).
 
 ## Depends on
 

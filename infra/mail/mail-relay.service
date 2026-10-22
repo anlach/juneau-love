@@ -1,0 +1,25 @@
+# /etc/systemd/system/mail-relay.service
+#
+# The HTTP->SMTP relay (infra/mail/relay.ts in the juneau-love repo).
+# Loopback only; Caddy fronts it with TLS. The token lives in
+# /etc/mail-relay/env (mode 0600, owned by the mailrelay user) — never in
+# the unit file.
+
+[Unit]
+Description=juneau.love mail relay (HTTP -> SMTP)
+After=network-online.target maddy.service
+Wants=network-online.target
+
+[Service]
+User=mailrelay
+WorkingDirectory=/opt/mail-relay
+ExecStart=/usr/local/bin/deno run --allow-net --allow-env /opt/mail-relay/relay.ts
+Restart=always
+RestartSec=5
+EnvironmentFile=/etc/mail-relay/env
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -18,3 +18,47 @@ site_url = "http://localhost:3000"
 # Postgres major version of the hosted project; re-verify after the first
 # push (SELECT version()) and keep this in sync for local dev.
 major_version = 17
+
+[functions.send-login-link]
+# Publicly invokable (called with no JWT) — the function itself checks
+# eligibility. registration-decision keeps the default (verify_jwt = true);
+# it re-verifies the caller is an admin either way.
+verify_jwt = false
+
+[functions.notify-registration]
+# Publicly invokable (called with no JWT at signup time). Idempotent via
+# users.admin_notified_at and it only emails admins about real pending
+# registrations, so an anonymous caller gains nothing (see the function
+# header).
+verify_jwt = false
+
+[edge_runtime.secrets]
+# Function env for the local stack: exposed to every local edge function as
+# a container env var. Origin must match [auth] site_url — GoTrue rewrites
+# mismatched redirect_to origins to the bare site_url
+# (knowledge/platform/project.md). (CLI 2.121: `supabase start` rejects
+# [functions.<name>.env] — "invalid keys: env" — so the per-function env
+# tables are gone; the section name says secrets, but plain local-dev values
+# work here too.)
+SITE_URL = "http://localhost:3000"
+
+# Local storage S3 protocol (storage-api): same SigV4 scheme as Hippius
+# ("aws4_request" scope terminator, X-Amz-Content-Sha256=UNSIGNED-PAYLOAD
+# on presigned URLs), served under /storage/v1/s3. These are the CLI's
+# built-in local-stack defaults (stable across restarts; `supabase status`
+# prints the same values), not real secrets. S3_ENDPOINT is the bare origin
+# and S3_PATH_PREFIX is the origin-relative path the bucket lives under —
+# the prefix must be part of the signed path (see _shared/s3.ts header).
+# The juneau-assets bucket must exist in local storage: create it once per
+# stack (or after `supabase db reset`) with:
+#   curl -sS -X POST http://127.0.0.1:54321/storage/v1/bucket \
+#     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+#     -H 'Content-Type: application/json' \
+#     -d '{"id":"juneau-assets","name":"juneau-assets","private":true}'
+# (SUPABASE_SERVICE_ROLE_KEY from `supabase status --output env`).
+S3_ENDPOINT = "http://127.0.0.1:54321"
+S3_PATH_PREFIX = "/storage/v1/s3"
+S3_REGION = "local"
+S3_BUCKET = "juneau-assets"
+S3_ACCESS_KEY_ID = "625729a08b95bf1b7ff351a663f3a23c"
+S3_SECRET_ACCESS_KEY = "850181e4652dd023b7a98c58ae0d2d34bd487ee0cc3254aed6eda37307425907"
