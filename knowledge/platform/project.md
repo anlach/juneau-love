@@ -27,8 +27,11 @@ live in the [db bundle](../db/); per-function details in the
 The schema is designed in the [db bundle](../db/) and implemented as
 `supabase/migrations/` (Supabase CLI, imperative migrations).
 `supabase/seed.sql` is local-dev data only — never applied to the hosted
-project. `.env.example` documents the client env:
-`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`.
+project. Client env (`PUBLIC_SUPABASE_URL`,
+`PUBLIC_SUPABASE_ANON_KEY`) is public by design and committed per Vite
+mode: `.env.development` / `.env.test` (local stack) and `.env.production`
+(hosted project) — the static build inlines them at build time, so no
+GitHub Actions variables are needed.
 
 ## Assets S3 (Hippius, local stack)
 

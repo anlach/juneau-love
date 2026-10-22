@@ -121,13 +121,25 @@ and count them as sent.
 
 ### Client environment
 
-Copy `.env.example` to `.env` and fill in `PUBLIC_SUPABASE_URL` /
-`PUBLIC_SUPABASE_ANON_KEY` (dashboard → Project Settings → API). The site is
-static, so these are baked in at build time and are public by design — never
-put the service role key or the DB password in the client env. For local
-development against the local stack, point `.env` at `http://127.0.0.1:54321`
-(dev server origin must stay `http://localhost:3000`, matching
-`site_url` in `supabase/config.toml`).
+The site is static, so `PUBLIC_SUPABASE_URL` / `PUBLIC_SUPABASE_ANON_KEY`
+are inlined into the JS bundle at build time (`src/env.ts`). Both values
+are public by design — every visitor's browser receives them, and Postgres
+RLS is the security boundary — so each environment's values live in a
+committed Vite env file and there is **nothing to configure in GitHub
+Actions**:
+
+| File | Mode | Points at | Used by |
+|---|---|---|---|
+| `.env.development` | development | local stack | `npm run dev` |
+| `.env.test` | test | local stack | `npx playwright test` |
+| `.env.production` | production | hosted project | `npm run build` (local and CI) |
+
+A gitignored local `.env` can still override for one-off experiments
+(Vite precedence: `.env` < `.env.local` < `.env.<mode>` <
+`.env.<mode>.local`). Never put the service role key, the DB password, or
+any Management API credential in a client env file. For local development
+the dev server origin must stay `http://localhost:3000`, matching
+`site_url` in `supabase/config.toml`.
 
 ## E2E tests
 
@@ -152,13 +164,9 @@ e2e.
 ## Deploy (site)
 
 Push to `main` — the GitHub Actions workflow in `.github/workflows/deploy.yml` builds the site
-and deploys it to GitHub Pages.
-
-One-time setup: set the repository variables `PUBLIC_SUPABASE_URL` and
-`PUBLIC_SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions →
-Variables → New repository variable) — the static build inlines them at
-build time and fails without them (both are public by design; plain
-variables, not secrets).
+and deploys it to GitHub Pages. Build-time env comes from the committed
+`.env.production` (see [Client environment](#client-environment)) — no
+repository variables or secrets are needed.
 
 In the repo settings, set **Pages → Build and deployment → Source** to **GitHub Actions**.
 

@@ -21,14 +21,12 @@ jobs:
         run: npm ci
 
       - name: Build
-        # PUBLIC_* are inlined into the static bundle at build time
-        # (src/env.ts); without them the build fails (env_invalid).
-        # Both values are public by design (RLS is the security boundary),
-        # so plain repository variables are fine — set them once in
-        # Settings → Secrets and variables → Actions → Variables.
-        env:
-          PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-          PUBLIC_SUPABASE_ANON_KEY: ${{ vars.PUBLIC_SUPABASE_ANON_KEY }}
+        # PUBLIC_* come from the committed .env.production (mode
+        # "production" is Vite's default build mode) and are inlined into
+        # the static bundle at build time (src/env.ts). Both values are
+        # public by design — they ship in the bundle every visitor
+        # downloads and Postgres RLS is the security boundary — so no
+        # GitHub Actions variables or secrets are needed.
         run: npm run build
 
       - name: Upload Artifacts

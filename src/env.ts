@@ -1,7 +1,9 @@
 import { defineEnvVars } from '@sveltejs/kit/env';
 
 /**
- * Explicit env vars (SvelteKit 3). Values come from `.env` / `.env.test`;
+ * Explicit env vars (SvelteKit 3). Values come from the committed
+ * per-mode files — `.env.development` / `.env.test` (local stack) and
+ * `.env.production` (hosted) — or a gitignored local `.env` override;
  * `static: true` inlines them into the client bundle at build time, which
  * is what a fully static (adapter-static) site needs.
  */

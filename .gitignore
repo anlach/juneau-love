@@ -23,7 +23,9 @@ supabase/.branches/
 .env
 .env.*
 !.env.example
+!.env.development
 !.env.test
+!.env.production
 
 # Vite
 vite.config.js.timestamp-*
