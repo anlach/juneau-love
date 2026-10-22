@@ -2,10 +2,11 @@
 type: auth-flow
 title: Client authentication (passwordless, login links)
 description: No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the login link in an email after approval. The link is a native GoTrue magiclink exchanged client-side for a Supabase session with stock supabase-js.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
 ---
 
 # Client authentication
@@ -61,9 +62,9 @@ createClient(url, anonKey, {
   endpoint refuses an email-only body ("Signup requires a valid password")
   — on the hosted project too, same GoTrue code — while the magic-link
   endpoint signs an unknown email up with a server-generated credential
-  the guest never sees, and emails the link. It depends on the hosted
-  "passwordless email login" setting ([project
-  notes](../platform/project.md)).
+  the guest never sees, and emails the link. (The magic-link endpoint is
+  on by default in GoTrue — there is no dashboard toggle to check;
+  [project notes](../platform/project.md).)
 - Email confirmation is **enabled** (project setting) → GoTrue emails a
   "confirm your email" link (Supabase auth email template, sent via the
   project's email provider). **No session is created yet**; the FE shows

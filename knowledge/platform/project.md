@@ -2,8 +2,10 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T15:50:00Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
+verified:
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
 ---
 
 # Supabase project
@@ -84,10 +86,13 @@ Per [Client authentication](../api/client-auth.md):
 
 - Auth: **email confirmation enabled** (the confirmation link is step 1
   of initial login).
-- Auth: **passwordless email login enabled for the email provider** —
-  the passwordless magiclink design depends on it (no passwords exist at
-  all). There is no CLI/local toggle for this; it is a dashboard
-  setting only (see [Local development](#local-development-differs-from-hosted)).
+- Auth: **no toggle needed for passwordless magiclink** — GoTrue's
+  magic-link endpoint is on by default (`External.Email.MagicLinkEnabled`,
+  `default:"true"` in the GoTrue v2.197.0 source; the hosted
+  `config/auth` API exposes no field for it, so it cannot be turned off
+  from the dashboard — the old "passwordless login" toggle no longer
+  exists; verified live 2026-10-22). The admin `generate_link` path
+  (login links) has no such gate at all.
 - Auth: JWT expiry **1 day** (86400s), refresh token expiry **365 days**
   (the GoTrue maximum).
 - Edge functions: `send-login-link` and `notify-registration`
@@ -165,7 +170,11 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   configured site URL** — magic links then land on `/` instead of
   `/login` (verified 2026-10-20, GoTrue v2.197.0: mismatched origin
   rewritten, same-origin paths preserved). On the hosted project the
-  default matches the dashboard `site_url`, so nothing is needed there.
+  dashboard `site_url` must be `https://juneau.love` — at first deploy it
+  was `http://localhost:3000` (a copy of the local value), so GoTrue would
+  have silently rewritten every magic link to localhost; it is set via the
+  same `PATCH /config/auth` as the SMTP config
+  ([Mail (self-hosted Maddy)](/mail.md), verified live 2026-10-22).
 - **The local asset flow uses the local stack's S3 protocol** — the
   asset functions run unchanged against
   `http://127.0.0.1:54321/storage/v1/s3` instead of Hippius (see

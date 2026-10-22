@@ -206,12 +206,15 @@ curl -sS -X PATCH "https://api.supabase.com/v1/projects/<PROJECT_REF>/config/aut
     "mailer_autoconfirm": false,
     "smtp_admin_email": "notify@juneau.love",
     "smtp_host": "mail.juneau.love",
-    "smtp_port": 587,
+    "smtp_port": "587",
     "smtp_user": "notify@juneau.love",
     "smtp_pass": "<the password you hashed in step 2>",
     "smtp_sender_name": "juneau.love"
   }'
 ```
+
+The Management API wants `smtp_port` as a **string** — unquoted `587` is
+rejected with `Invalid input: expected string, received number`.
 
 Then test a real signup (or a confirmation link) end to end.
 
