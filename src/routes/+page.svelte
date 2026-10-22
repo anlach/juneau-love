@@ -54,7 +54,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.35em;
 		font-size: 0.8rem;
-		color: var(--rose);
+		color: var(--color-gold);
 		margin-bottom: 0.5rem;
 	}
 	.sub {

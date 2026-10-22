@@ -3,7 +3,7 @@ type: design-token
 title: Color palette
 description: "The site's four primary/secondary color pairs (gold/lilac, sage/plum, terracotta/peach, slate/sand): hex values, the --color-* custom properties in app.css, tentative role assignments, and contrast limits."
 status: stable
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T05:39:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T20:15:00Z }
 verified: { by: human:anlach, at: 2026-10-18T10:18:13Z }
 ---
 
@@ -32,27 +32,32 @@ Components must not hardcode palette hex values.
 
 ## Tentative usage
 
-Tentative assignments — not locked:
+Tentative assignments for the current dark (plum-ground) theme — not
+locked:
 
 | Token | Where | Why |
 |---|---|---|
-| lilac | page background | lightest neutral; plum text on it is 9.3:1 |
-| plum | all text, focus outlines | the only token that clears 4.5:1 body text on lilac |
-| gold | decorative accents (dividers, sparks) | decorative (1.8:1 on lilac) |
-| peach | primary button background | plum text on peach is 7.9:1 |
-| sand | button hover background | plum text on sand is 9.2:1 |
-| sage | text selection highlight, disabled states | plum on sage is 8.4:1 |
-| terracotta | spare accent | 2.2:1 on lilac: decorative only |
-| slate | spare accent | 3.3:1 on lilac: large text/decoration only |
+| plum | page + input background, primary button text | dark ground; lilac on plum is 9.3:1, plum on peach is 7.9:1 |
+| lilac | body text; muted text is a 75/25 lilac/plum mix; soft borders | body 9.3:1 on plum; muted 5.9:1 on plum, 4.5:1 on card |
+| peach | primary button background, links | 7.9:1 both directions against plum/peach |
+| sand | button hover background, pending/rejected badge text | plum on sand is 9.2:1 |
+| sage | success text (`.msg.ok`), approved badge | sage on plum is 8.4:1 |
+| gold | decorative accents: card borders, focus outlines, kicker, selection background | 5.2:1 on plum — clears 3:1 for UI components |
+| terracotta | destructive/error accent (mixed 35/65 with peach for readable `--error`); danger borders | raw 4.2:1 on plum; error mix is 6.4:1 |
+| slate | input borders, pending badge tint | 2.8:1 on plum: tint/border only, no text |
 
 ## Contrast limits (WCAG)
 
 | Foreground on background | Ratio | Usable for |
 |---|---|---|
-| plum on lilac | 9.3:1 | body text |
+| lilac on plum | 9.3:1 | body text |
+| lilac on card (plum 88% / lilac 12%) | 7.2:1 | text on elevated surfaces |
+| muted (lilac 75% / plum 25%) on plum | 5.9:1 | secondary text |
+| muted on card | 4.5:1 | secondary text on elevated surfaces |
 | plum on peach | 7.9:1 | button text |
 | plum on sand | 9.2:1 | button hover text |
-| plum on sage | 8.4:1 | chips, disabled text |
-| terracotta on white (reference) | 3.8:1 | large text only |
-| slate on lilac | 3.3:1 | large text / decoration |
-| gold on lilac | 1.8:1 | decoration only |
+| sage on plum | 8.4:1 | success, approved badge |
+| peach on plum | 7.9:1 | links |
+| gold on plum | 5.2:1 | focus, kicker, decoration |
+| error mix (terracotta 35% / peach 65%) on plum | 6.4:1 | error text |
+| slate on plum | 2.8:1 | tint / borders only |

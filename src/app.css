@@ -22,12 +22,7 @@
 }
 
 :root {
-	--cream: #fbf7f1;
-	--ink: #4a4038;
-	--muted: #8d8177;
-	--rose: #b76e79;
-	--rose-deep: #a15a66;
-	color-scheme: light;
+	color-scheme: dark;
 
 	/* Site palette — four primary/secondary pairs.
 	   See knowledge/design/color-palette.md. */
@@ -39,6 +34,21 @@
 	--color-peach: #e3ab84;
 	--color-slate: #54697a;
 	--color-sand: #e1bfa4;
+
+	/* Theme roles — dark, plum ground. All derived from the palette.
+	   See knowledge/design/tokens.md. */
+	--bg: var(--color-plum);
+	--bg-elevated: color-mix(in srgb, var(--color-plum) 88%, var(--color-lilac));
+	--text: var(--color-lilac);
+	--muted: color-mix(in srgb, var(--color-lilac) 75%, var(--color-plum));
+	--accent: var(--color-peach);
+	--accent-hover: var(--color-sand);
+	--accent-deep: color-mix(in srgb, var(--color-terracotta) 50%, var(--color-peach));
+	--border: color-mix(in srgb, var(--color-gold) 35%, transparent);
+	--border-soft: color-mix(in srgb, var(--color-lilac) 22%, transparent);
+	--focus: var(--color-gold);
+	--success: var(--color-sage);
+	--error: color-mix(in srgb, var(--color-terracotta) 35%, var(--color-peach));
 }
 
 * {
@@ -50,18 +60,19 @@ body {
 	font-family: 'Bona Nova', Georgia, 'Times New Roman', serif;
 	font-size: 17px;
 	line-height: 1.5;
-	color: var(--ink);
+	color: var(--text);
 	background: radial-gradient(
 		1300px 500px at 50% -150px,
-		rgba(183, 110, 121, 0.08),
+		color-mix(in srgb, var(--color-gold) 9%, transparent),
 		transparent 60%
 	),
-		var(--cream);
+		var(--bg);
 	min-height: 100vh;
 }
 
 ::selection {
-	background: color-mix(in srgb, var(--color-sage) 55%, white);
+	background: var(--color-gold);
+	color: var(--color-plum);
 }
 
 .display {
@@ -69,7 +80,11 @@ body {
 }
 
 a {
-	color: var(--rose-deep);
+	color: var(--accent);
+}
+
+a:hover {
+	color: var(--accent-hover);
 }
 
 /* ---- layout ---- */
@@ -93,11 +108,11 @@ a {
 	font-size: 1.3rem;
 	letter-spacing: 0.02em;
 	text-decoration: none;
-	color: var(--ink);
+	color: var(--text);
 }
 
 .brand .dot {
-	color: var(--rose);
+	color: var(--color-gold);
 }
 
 .site-nav {
@@ -109,11 +124,11 @@ a {
 
 .site-nav a {
 	text-decoration: none;
-	color: var(--ink);
+	color: var(--text);
 }
 
 .site-nav a:hover {
-	color: var(--rose-deep);
+	color: var(--accent);
 }
 
 .who {
@@ -124,13 +139,13 @@ a {
 /* ---- shared bits ---- */
 
 .card {
-	background: rgba(255, 255, 255, 0.55);
-	border: 1px solid rgba(183, 110, 121, 0.18);
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
 	border-radius: 12px;
 	padding: 1.5rem 1.75rem;
 	margin: 1.5rem auto;
 	max-width: 480px;
-	box-shadow: 0 10px 30px -18px rgba(74, 64, 56, 0.35);
+	box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
 }
 
 .card h2 {
@@ -157,9 +172,9 @@ a {
 
 .btn {
 	display: inline-block;
-	background: var(--rose);
-	color: #fff;
-	border: 1px solid var(--rose-deep);
+	background: var(--color-peach);
+	color: var(--color-plum);
+	border: 1px solid var(--accent-deep);
 	border-radius: 999px;
 	padding: 0.55rem 1.4rem;
 	font-family: inherit;
@@ -169,7 +184,7 @@ a {
 }
 
 .btn:hover {
-	background: var(--rose-deep);
+	background: var(--color-sand);
 }
 
 .btn:disabled {
@@ -184,18 +199,22 @@ a {
 
 .btn.ghost {
 	background: transparent;
-	color: var(--rose-deep);
-	border-color: rgba(183, 110, 121, 0.4);
+	color: var(--text);
+	border-color: var(--border-soft);
 }
 
 .btn.ghost:hover {
-	background: rgba(183, 110, 121, 0.08);
+	background: color-mix(in srgb, var(--color-gold) 12%, transparent);
 }
 
 .btn.danger {
 	background: transparent;
-	color: #9b4a3f;
-	border-color: rgba(155, 74, 63, 0.4);
+	color: var(--error);
+	border-color: color-mix(in srgb, var(--color-terracotta) 45%, transparent);
+}
+
+.btn.danger:hover {
+	background: color-mix(in srgb, var(--color-terracotta) 16%, transparent);
 }
 
 .field {
@@ -212,15 +231,15 @@ a {
 	padding: 0.55rem 0.7rem;
 	font-family: inherit;
 	font-size: 1rem;
-	color: var(--ink);
-	background: #fff;
-	border: 1px solid rgba(141, 129, 119, 0.4);
+	color: var(--text);
+	background: var(--bg);
+	border: 1px solid color-mix(in srgb, var(--color-slate) 50%, transparent);
 	border-radius: 8px;
 }
 
 .field input:focus {
-	outline: 2px solid rgba(183, 110, 121, 0.35);
-	border-color: var(--rose);
+	outline: 2px solid var(--focus);
+	border-color: var(--accent);
 }
 
 .msg {
@@ -229,11 +248,11 @@ a {
 }
 
 .msg.err {
-	color: #9b4a3f;
+	color: var(--error);
 }
 
 .msg.ok {
-	color: #4c6b4f;
+	color: var(--success);
 }
 
 .badge {
@@ -244,18 +263,18 @@ a {
 }
 
 .badge.pending {
-	background: rgba(141, 129, 119, 0.15);
-	color: var(--muted);
+	background: color-mix(in srgb, var(--color-slate) 30%, transparent);
+	color: var(--color-sand);
 }
 
 .badge.approved {
-	background: rgba(76, 107, 79, 0.15);
-	color: #4c6b4f;
+	background: color-mix(in srgb, var(--color-sage) 25%, transparent);
+	color: var(--color-sage);
 }
 
 .badge.rejected {
-	background: rgba(155, 74, 63, 0.15);
-	color: #9b4a3f;
+	background: color-mix(in srgb, var(--color-terracotta) 25%, transparent);
+	color: var(--color-sand);
 }
 
 /* ---- gallery ---- */
@@ -269,8 +288,8 @@ a {
 
 .gallery-grid figure {
 	margin: 0;
-	background: #fff;
-	border: 1px solid rgba(183, 110, 121, 0.18);
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
 	border-radius: 10px;
 	overflow: hidden;
 }
@@ -286,10 +305,10 @@ a {
 .gallery-grid .placeholder {
 	background: repeating-linear-gradient(
 		45deg,
-		rgba(183, 110, 121, 0.06),
-		rgba(183, 110, 121, 0.06) 10px,
-		rgba(183, 110, 121, 0.12) 10px,
-		rgba(183, 110, 121, 0.12) 20px
+		color-mix(in srgb, var(--color-gold) 6%, transparent),
+		color-mix(in srgb, var(--color-gold) 6%, transparent) 10px,
+		color-mix(in srgb, var(--color-gold) 14%, transparent) 10px,
+		color-mix(in srgb, var(--color-gold) 14%, transparent) 20px
 	);
 }
 
@@ -301,7 +320,7 @@ a {
 
 .gallery-grid figcaption .uploader {
 	font-style: italic;
-	color: var(--ink);
+	color: var(--text);
 }
 
 /* ---- registrations table ---- */
@@ -317,12 +336,12 @@ a {
 	text-align: left;
 	font-weight: 400;
 	color: var(--muted);
-	border-bottom: 1px solid rgba(141, 129, 119, 0.35);
+	border-bottom: 1px solid var(--border-soft);
 	padding: 0.4rem 0.6rem;
 }
 
 .table td {
-	border-bottom: 1px solid rgba(141, 129, 119, 0.18);
+	border-bottom: 1px solid color-mix(in srgb, var(--color-lilac) 12%, transparent);
 	padding: 0.4rem 0.6rem;
 	vertical-align: middle;
 }

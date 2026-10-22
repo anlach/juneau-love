@@ -2,7 +2,7 @@
 type: component
 title: Shared components and conventions
 description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid) plus the StateScreen component for the signed-in status screens."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-19T04:46:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T20:15:00Z }
 ---
 
 # Shared components
@@ -13,7 +13,7 @@ lived here: [Design tokens](/tokens.md).
 
 ## Site chrome (root layout)
 
-- `header.site-header.frame`: brand (`juneau.love`, `.display`, rose
+- `header.site-header.frame`: brand (`juneau.love`, `.display`, gold
   `.`) on the left, `nav.site-nav` on the right.
 - Nav content is gated by auth state (the *rules* — which links appear for
   which status/permission — are the business rule in [Access by approval
@@ -28,10 +28,10 @@ lived here: [Design tokens](/tokens.md).
 
 | Class | Purpose | Conventions |
 |---|---|---|
-| `.card` | Centered content panel (forms, status screens) | max-width 480px, white 55% fill, hairline rose border; add `.center` for centered copy |
+| `.card` | Centered content panel (forms, status screens) | max-width 480px, plum-lilac fill (`--bg-elevated`), hairline gold border; add `.center` for centered copy |
 | `.btn` | Primary action (pill) | `.ghost` = secondary, `.danger` = destructive, `.small` = nav-sized; `disabled` while a request is in flight |
 | `.field` | Form label + input (label wraps input) | inputs are full-width; **forms that do their own validation carry `novalidate`** — without it the browser's `type=email` constraint validation swallows the submit before the Svelte handler runs |
-| `.msg` | Inline feedback line | `.msg.ok` (green) / `.msg.err` (rust); interactive feedback also gets `role="alert"` (one-shot) or `role="status"` (may update) |
+| `.msg` | Inline feedback line | `.msg.ok` (sage) / `.msg.err` (terracotta-peach mix); interactive feedback also gets `role="alert"` (one-shot) or `role="status"` (may update) |
 | `.badge` | Approval-state chip in the registrations table | `.pending` / `.approved` / `.rejected` tint the background |
 | `.table` | Data table (registrations) | header row in `.muted`, hairline row separators, `.actions` cell right-aligned with small buttons |
 | `.gallery-grid` | Photo grid | auto-fill `minmax(180px, 1fr)`; 4:3 `object-fit: cover` images; hatched `.placeholder` when no presigned URL is available; caption shows uploader (italic) + caption |
