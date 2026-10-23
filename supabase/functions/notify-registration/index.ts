@@ -31,9 +31,10 @@ import {
   registrationAlertEmail,
   rest,
   sendEmail,
+  withCors,
 } from "../_shared/index.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   let body: unknown;
@@ -125,4 +126,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ sent: true });
-});
+}));

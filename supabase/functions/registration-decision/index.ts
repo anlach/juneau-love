@@ -18,6 +18,7 @@ import {
   loginLinkEmail,
   rest,
   sendEmail,
+  withCors,
 } from "../_shared/index.ts";
 
 const DECISION_TO_STATUS: Record<string, string> = {
@@ -25,7 +26,7 @@ const DECISION_TO_STATUS: Record<string, string> = {
   reject: "rejected",
 };
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   // 1. The caller must hold the admin role. (The JWT itself was verified
@@ -125,4 +126,4 @@ Deno.serve(async (req) => {
     },
     email_sent,
   });
-});
+}));

@@ -6,14 +6,14 @@
 // service-role read path). Unknown or not-visible ids are omitted, never
 // reported: the existence of images a caller may not see is not disclosed.
 
-import { json, jwtSub, restAsUser } from "../_shared/index.ts";
+import { json, jwtSub, restAsUser, withCors } from "../_shared/index.ts";
 import { S3, presignS3ObjectUrl, s3Configured } from "../_shared/s3.ts";
 
 const MAX_IDS_PER_CALL = 100;
 const PRESIGN_TTL_SECONDS = 900; // 15 minutes
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "method_not_allowed" }, { status: 405, headers: { allow: "POST" } });
   }
@@ -67,4 +67,4 @@ Deno.serve(async (req) => {
     }),
   );
   return json({ urls });
-});
+}));

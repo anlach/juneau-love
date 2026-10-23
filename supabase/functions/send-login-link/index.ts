@@ -17,11 +17,12 @@ import {
   loginLinkEmail,
   rest,
   sendEmail,
+  withCors,
 } from "../_shared/index.ts";
 
 const COOLDOWN_SECONDS = 10 * 60;
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   let body: unknown;
@@ -87,4 +88,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ sent: true });
-});
+}));

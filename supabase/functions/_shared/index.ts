@@ -46,6 +46,46 @@ export function json(
 }
 
 /**
+ * CORS for browser calls (the site's origin → the function URL). The
+ * hosted edge runtime does NOT answer CORS preflights itself: it forwards
+ * OPTIONS to the function, which must return the allow-headers itself.
+ * Without this, the browser blocks every JSON POST from the site (observed
+ * 2026-10-22: the preflight was answered 405, the function body never ran,
+ * and sign-in was dead on the hosted project while curl-based tests — no
+ * preflight — passed). Answers OPTIONS with 204 and stamps
+ * Access-Control-Allow-Origin (echoing the caller's origin; the
+ * functions' own auth, not CORS, is the security boundary) on every
+ * response.
+ */
+export function withCors(
+  handler: (req: Request) => Response | Promise<Response>,
+): (req: Request) => Promise<Response> {
+  return (req) => {
+    const origin = req.headers.get("origin");
+    const allowOrigin = origin && origin !== "*" ? origin : "*";
+    if (req.method === "OPTIONS") {
+      return Promise.resolve(
+        new Response(null, {
+          status: 204,
+          headers: {
+            "access-control-allow-origin": allowOrigin,
+            "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
+            "access-control-allow-methods": "POST, OPTIONS",
+            "access-control-max-age": "86400",
+            "vary": "origin",
+          },
+        }),
+      );
+    }
+    return Promise.resolve(handler(req)).then((res) => {
+      res.headers.set("access-control-allow-origin", allowOrigin);
+      res.headers.set("vary", "origin");
+      return res;
+    });
+  };
+}
+
+/**
  * PostgREST call with the service role key. Returns the parsed body (or
  * null when there is none — e.g. a 204) plus the HTTP status.
  */

@@ -5,14 +5,14 @@
 // another user's key or an admin-seeded key. Limits are the v1 limits
 // from the guest gallery story: content-type allowlist + 5 MB cap.
 
-import { json, jwtSub, restAsUser } from "../_shared/index.ts";
+import { json, jwtSub, restAsUser, withCors } from "../_shared/index.ts";
 import { S3, presignS3ObjectUrl, s3Configured } from "../_shared/s3.ts";
 
 const ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_ASSET_BYTES = 5 * 1024 * 1024; // 5 MB
 const PRESIGN_TTL_SECONDS = 900; // 15 minutes
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "method_not_allowed" }, { status: 405, headers: { allow: "POST" } });
   }
@@ -70,4 +70,4 @@ Deno.serve(async (req) => {
     signedHeaders: { "content-type": b.content_type },
   });
   return json({ s3_key: s3Key, upload_url: url, expires_at: expiresAt });
-});
+}));
