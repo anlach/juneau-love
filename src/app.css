@@ -79,11 +79,11 @@ body {
 	font-family: 'Lavishly Yours', cursive;
 }
 
-a {
+a:not(.btn) {
 	color: var(--accent);
 }
 
-a:hover {
+a:not(.btn):hover {
 	color: var(--accent-hover);
 }
 

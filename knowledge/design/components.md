@@ -2,7 +2,7 @@
 type: component
 title: Shared components and conventions
 description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid) plus the StateScreen component for the signed-in status screens."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T23:56:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-23T00:01:00Z }
 ---
 
 # Shared components
@@ -30,7 +30,7 @@ lived here: [Design tokens](/tokens.md).
 | Class | Purpose | Conventions |
 |---|---|---|
 | `.card` | Centered content panel (forms, status screens) | max-width 480px, plum-lilac fill (`--bg-elevated`), hairline gold border; add `.center` for centered copy |
-| `.btn` | Primary action (pill) | `.ghost` = secondary, `.danger` = destructive, `.small` = nav-sized; `disabled` while a request is in flight |
+| `.btn` | Primary action (pill) | `.ghost` = secondary, `.danger` = destructive, `.small` = nav-sized; `disabled` while a request is in flight; button-styled `<a>`s own their text colour — the generic link style is scoped `a:not(.btn)` so it can't override `.btn` on hover |
 | `.field` | Form label + input (label wraps input) | inputs are full-width; **forms that do their own validation carry `novalidate`** — without it the browser's `type=email` constraint validation swallows the submit before the Svelte handler runs |
 | `.msg` | Inline feedback line | `.msg.ok` (sage) / `.msg.err` (terracotta-peach mix); interactive feedback also gets `role="alert"` (one-shot) or `role="status"` (may update) |
 | `.badge` | Approval-state chip in the registrations table | `.pending` / `.approved` / `.rejected` tint the background |
