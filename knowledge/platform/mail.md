@@ -102,6 +102,40 @@ local stack uses Supabase's local SMTP (loopback) and, with local
 autoconfirm on, never sends confirmation mail — see [project
 notes](/project.md), Local development.
 
+## Rotating the Maddy submission password (GoTrue)
+
+The `:587` listener authenticates `notify@juneau.love` against
+`/etc/maddy/smtp_passwd`, one line per credential: `user: <bcrypt hash>`.
+To rotate:
+
+1. Generate a new password **on the VPS** and keep it in a mode-0600 temp
+   file (never echo it into a shell history or log).
+2. `maddy hash -p "$(cat /tmp/newpw)"` → the bcrypt hash. Hashes are
+   **salted** — the same password hashes differently on every run. The
+   hash and the Supabase-side value must both derive from the same
+   plaintext.
+3. Install the new file: `sudo install -o maddy -g maddy -m 600` (the
+   `maddy` service user must be able to read it).
+4. `sudo systemctl restart maddy` — the pass table is not reloaded on
+   file change.
+5. Set the same **plaintext** as `smtp_pass` in the Supabase project SMTP
+   setting. The dashboard/API field takes the plaintext, never the hash
+   line. (In that config the username key is `smtp_user` — there is no
+   `smtp_user_name`.)
+
+One valid hash per user: duplicate lines for the same user collapse
+(first line wins — observed 2026-10-23). Verify from **outside** the VPS,
+because that is GoTrue's path: STARTTLS to `mail.juneau.love:587`, AUTH
+with the new credentials, expect 235. Then verify end-to-end by firing
+`POST /auth/v1/otp` and checking `auth_logs` (source `auth_logs`) for a
+clean send — a `535 5.7.8 Invalid credentials` there means the running
+GoTrue and Maddy disagree. Reading the config back via the Management API
+is not a valid verification: the config store can hold the right value
+while the project host still runs the old one (observed 2026-10-23 — a
+running GoTrue kept using stale SMTP credentials for over an hour, and a
+full project restart did not by itself re-sync them; escalated to
+Supabase support).
+
 ## Operations
 
 - Logs: `journalctl -u maddy` (delivery/bounces), `-u mail-relay` (one

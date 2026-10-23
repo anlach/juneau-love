@@ -1,5 +1,6 @@
 # api-convention
 
+* [CORS preflights for browser calls to edge functions](edge-function-cors.md) - Why every browser-called edge function must answer OPTIONS itself (withCors in _shared) — the hosted runtime forwards preflights, and without it the browser blocks the JSON POST before the function body ever runs.
 * [Decoding edge-function errors in the client](client-function-errors.md) - How the browser reads status codes and structured error codes ({ error: <code> }) from a failed supabase.functions.invoke — and why error.context is a trap.
 
 # api-endpoint
