@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juneau Love — Color Palette</title>
+<style>
+  :root {
+    --color-gold: #a7923c;
+    --color-lilac: #c7c5cc;
+    --color-sage: #a3c5ac;
+    --color-plum: #311b29;
+    --color-terracotta: #c9692f;
+    --color-peach: #e3ab84;
+    --color-slate: #54697a;
+    --color-sand: #e1bfa4;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    background: var(--color-lilac);
+    color: var(--color-plum);
+    padding: 2.5rem 1.5rem;
+    min-height: 100vh;
+  }
+
+  .container { max-width: 760px; margin: 0 auto; }
+
+  h1 { font-size: 1.6rem; margin-bottom: 0.35rem; }
+
+  .subtitle { opacity: 0.75; margin-bottom: 2rem; font-size: 0.95rem; }
+
+  .pairs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+  }
+
+  .pair { display: flex; flex-direction: column; gap: 1.25rem; }
+
+  .pair-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    opacity: 0.6;
+  }
+
+  .swatch {
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(49, 27, 41, 0.15);
+  }
+
+  .color {
+    height: 110px;
+  }
+
+  .meta {
+    background: rgba(49, 27, 41, 0.06);
+    padding: 0.7rem 0.9rem;
+  }
+
+  .name {
+    font-weight: 700;
+    font-size: 1.05rem;
+    text-transform: capitalize;
+  }
+
+  .hex {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.85rem;
+    margin-top: 0.15rem;
+  }
+
+  .cssvar {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    opacity: 0.65;
+    margin-top: 0.1rem;
+  }
+
+  /* swatch background + label text color per token */
+  .swatch-gold .color       { background: var(--color-gold); }
+  .swatch-lilac .color      { background: var(--color-lilac); }
+  .swatch-sage .color       { background: var(--color-sage); }
+  .swatch-plum .color       { background: var(--color-plum); }
+  .swatch-terracotta .color { background: var(--color-terracotta); }
+  .swatch-peach .color      { background: var(--color-peach); }
+  .swatch-slate .color      { background: var(--color-slate); }
+  .swatch-sand .color       { background: var(--color-sand); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Color palette</h1>
+  <p class="subtitle">Four primary/secondary pairs — all eight tokens from <code>app.css</code> <code>:root</code></p>
+
+  <div class="pairs">
+    <div class="pair">
+      <div class="pair-label">Pair 1</div>
+      <div class="swatch swatch-gold">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">gold</div>
+          <div class="hex">#a7923c</div>
+          <div class="cssvar">--color-gold</div>
+        </div>
+      </div>
+      <div class="swatch swatch-lilac">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">lilac</div>
+          <div class="hex">#c7c5cc</div>
+          <div class="cssvar">--color-lilac</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Pair 2</div>
+      <div class="swatch swatch-sage">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">sage</div>
+          <div class="hex">#a3c5ac</div>
+          <div class="cssvar">--color-sage</div>
+        </div>
+      </div>
+      <div class="swatch swatch-plum">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">plum</div>
+          <div class="hex">#311b29</div>
+          <div class="cssvar">--color-plum</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Pair 3</div>
+      <div class="swatch swatch-terracotta">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">terracotta</div>
+          <div class="hex">#c9692f</div>
+          <div class="cssvar">--color-terracotta</div>
+        </div>
+      </div>
+      <div class="swatch swatch-peach">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">peach</div>
+          <div class="hex">#e3ab84</div>
+          <div class="cssvar">--color-peach</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Pair 4</div>
+      <div class="swatch swatch-slate">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">slate</div>
+          <div class="hex">#54697a</div>
+          <div class="cssvar">--color-slate</div>
+        </div>
+      </div>
+      <div class="swatch swatch-sand">
+        <div class="color"></div>
+        <div class="meta">
+          <div class="name">sand</div>
+          <div class="hex">#e1bfa4</div>
+          <div class="cssvar">--color-sand</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

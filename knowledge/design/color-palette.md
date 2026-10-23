@@ -1,9 +1,9 @@
 ---
 type: design-token
 title: Color palette
-description: "The site's four primary/secondary color pairs (gold/lilac, sage/plum, terracotta/peach, slate/sand): hex values, the --color-* custom properties in app.css, tentative role assignments, and contrast limits."
+description: "The site's four primary/secondary color pairs (gold/lilac, sage/plum, terracotta/peach, slate/sand): hex values, the --color-* custom properties in app.css, tentative role assignments, contrast limits, and the standalone swatch page (color-palette.html)."
 status: stable
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T20:15:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-23T00:07:00Z }
 verified: { by: human:anlach, at: 2026-10-18T10:18:13Z }
 ---
 
@@ -13,6 +13,9 @@ Four primary/secondary pairs that may be combined freely across areas of
 the site. The hex values are settled by the human; the working names
 (gold, lilac, …) are agent-assigned labels — rename them anywhere
 (`app.css` + this doc) if better names come up.
+
+A standalone swatch page for these pairs lives next to this concept:
+`color-palette.html` (open it directly in a browser).
 
 ## Pairs
 
