@@ -2,7 +2,7 @@
 type: project-notes
 title: Mail (self-hosted Maddy)
 description: The self-hosted mail stack on the VPS — Maddy for delivery, the HTTP->SMTP relay that edge functions must use, DNS records, and the Supabase SMTP/secret settings it requires.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-21T18:22:12Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-23T12:26:00Z }
 ---
 
 # Mail (self-hosted Maddy)
@@ -55,7 +55,7 @@ email over HTTPS and speaks SMTP to Maddy on loopback.
 | Maddy | The mail server: DKIM signing, direct MX delivery | send-only; loopback `:25` hand-off + `:587` STARTTLS submission; no local mailboxes |
 | relay.ts (`infra/mail/relay.ts`) | HTTP→SMTP for the edge functions | loopback only, bearer-token auth, ≤10 recipients / 256 KB per part, multipart/alternative (text+html), RFC 2047 subjects, fixed From |
 | nginx (mail vhost) | TLS at `mail.juneau.love:443` | server blocks on the existing nginx (which fronts other sites on :80/:443); certbot webroot issues + auto-renews; the only public mail-adjacent surface |
-| GoTrue SMTP | Auth emails (confirmation, signup) | Supabase "custom SMTP" project setting → `mail.juneau.love:587`; Supabase caps this at 30 msg/h by default (Auth → Rate limits) — far above a wedding's volume |
+| GoTrue SMTP | Auth emails (confirmation, signup) | Supabase "custom SMTP" project setting → `mail.juneau.love:587`; `rate_limit_email_sent` is 30 msg/hour (the GoTrue default; it had been set to 2, which 429'd repeated login attempts invisibly — raised 2026-10-23). Failed SMTP sends are still invisible to the client: GoTrue answers 200 anyway |
 
 ## DNS (juneau.love)
 
@@ -122,6 +122,13 @@ To rotate:
    setting. The dashboard/API field takes the plaintext, never the hash
    line. (In that config the username key is `smtp_user` — there is no
    `smtp_user_name`.)
+   **Observed 2026-10-23: the Management API was silently ignoring
+   `smtp_pass` writes** — HTTP 200 with the old value echoed back and
+   unchanged on read-back, while other fields in the same PATCH (e.g.
+   `rate_limit_email_sent`, `smtp_port`) applied fine. The *running*
+   GoTrue was stuck on a stale password the same day (captured with the
+   sink). If the API won't take the write, set the password from the
+   dashboard instead and include the symptom in the escalation.
 
 One valid hash per user: duplicate lines for the same user collapse
 (first line wins — observed 2026-10-23). Verify from **outside** the VPS,
@@ -135,6 +142,62 @@ while the project host still runs the old one (observed 2026-10-23 — a
 running GoTrue kept using stale SMTP credentials for over an hour, and a
 full project restart did not by itself re-sync them; escalated to
 Supabase support).
+
+## Capturing what the running GoTrue actually presents (smtp-capture-tls.py)
+
+The Management API's `GET /config/auth` is not a valid check that the
+running GoTrue uses the stored SMTP credentials — the process takes its
+SMTP config at startup, and a project restart may not re-provision it
+(observed 2026-10-23). `smtp-capture-tls.py` closes that gap: a logging
+SMTP sink that advertises `STARTTLS` **and** `AUTH PLAIN LOGIN` (exactly
+as Maddy's :587 does) and serves the real Let's Encrypt cert for
+`mail.juneau.love`. The sink logs the full session: decoded user +
+password (clear and SHA-256), MAIL FROM / RCPT, and the complete message
+— including the magic-link URL, which also reveals the running
+`site_url`. It never delivers mail.
+
+- **The sink must do TLS** (verified 2026-10-23 against the exact pinned
+  gomail commit, v2.0.0-20160411212932-81ebce5c23df): that commit has no
+  `StartTLSPolicy` — advertised STARTTLS is always negotiated, and
+  gomail's AUTH PLAIN is Go stdlib's `smtp.PlainAuth`, whose `Start`
+  **refuses a non-TLS connection** ("unencrypted connection"). The
+  original no-STARTTLS `smtp-capture.py` design therefore captures
+  nothing: the client sends `EHLO` then `QUIT` without any AUTH
+  (reproduced with the probe). GoTrue also *verifies* the server cert
+  (gomail `tls.Config{ServerName: smtp_host}`, no skip-verify), so the
+  sink must serve a cert valid for `mail.juneau.love` — copy the Let's
+  Encrypt fullchain/privkey to a mode-0600 temp dir (sudo; the live
+  paths are root-only).
+- The client re-EHLOs after the handshake; advertise both extensions in
+  both EHLO responses.
+- **Validate the method first**: `probe/` sends exactly the way
+  `mailmeclient` does (pinned to the same gomail commit GoTrue pins).
+  Sink + probe must log the exact `-user` / `-pass` you passed.
+- **Hosted capture**: copy the cert, run the sink on a spare public
+  port (open it in ufw first; mode-0600 log), `PATCH /config/auth`
+  `smtp_port` to that port (string), fire `POST /auth/v1/otp`
+  (magiclink) for an existing confirmed user (no new user row; ≥61 s
+  between sends — GoTrue `SMTP.MaxFrequency`; also bump
+  `rate_limit_email_sent` temporarily if the limit is low and the user
+  already used their sends — the 429 is invisible in the SMTP path),
+  read the
+  `SUMMARY` line, compare its `pass_sha256` with the SHA-256 of the
+  stored `smtp_pass`, then restore `smtp_port` and the rate limit. If
+  the sink sees no connection at all, even after a project restart, the
+  whole SMTP config propagation is stuck, not just the password.
+- **`smtp_port` propagates, `smtp_pass` does not**: the running GoTrue
+  picked up a `smtp_port` PATCH within seconds (observed 2026-10-23)
+  while an `smtp_pass` change made hours earlier was still not in effect
+  — the propagation bug is password-specific.
+- While hosted `smtp_port` points at the sink, GoTrue's real auth emails
+  are discarded (the sink doesn't deliver) — keep the window short.
+- Captured passwords are in the log in the clear: mode-0600 file, delete
+  it when done. Full cleanup: sink process, log, cert copies, ufw rule.
+- **Result of the 2026-10-23 capture**: the running GoTrue presented a
+  stale password (sha256 `85bad909…`) while the config store held a
+  different, Maddy-valid one (sha256 `746d4e77…`) — every GoTrue send
+  died at Maddy with 535, and GoTrue still answered the client HTTP 200
+  ("check your email"), so failed sends are invisible from the browser.
 
 ## Operations
 
