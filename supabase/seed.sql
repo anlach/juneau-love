@@ -78,3 +78,14 @@ from public.users u
 join public.roles r on r.name = 'admin'
 where u.id = '11111111-1111-1111-1111-111111111111'
 on conflict (user_id, role_id) do nothing;
+
+-- 5. The juneau-assets storage bucket for the asset gallery. With JL_ENV=dev
+--    (config.toml [edge_runtime.secrets]) the edge functions presign against
+--    the local storage S3 protocol, and e2e/approved-guest.spec.ts uploads a
+--    real photo into this bucket. storage.buckets does not survive
+--    `supabase db reset`, so the bucket is created here, idempotently, instead
+--    of a manual curl per stack.
+insert into storage.buckets (id, name, public, created_at, updated_at)
+values ('juneau-assets', 'juneau-assets', false, now(), now())
+on conflict (id) do nothing;
+
