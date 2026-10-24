@@ -1,6 +1,6 @@
 # component
 
-* [Shared components and conventions](components.md) - The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid) plus the StateScreen component for the signed-in status screens.
+* [Shared components and conventions](components.md) - The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid, the header account menu) plus the StateScreen component for the signed-in status screens.
 
 # design-decision
 

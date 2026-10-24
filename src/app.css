@@ -136,6 +136,78 @@ a:not(.btn):hover {
 	color: var(--muted);
 }
 
+/* Header account menu (icon button + dropdown). */
+
+.account-menu {
+	position: relative;
+	display: inline-block;
+}
+
+.menu-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.3rem 0.45rem;
+	background: transparent;
+	border: 1px solid var(--border-soft);
+	border-radius: 8px;
+	color: var(--text);
+	cursor: pointer;
+}
+
+.menu-btn:hover {
+	color: var(--accent);
+	border-color: var(--border);
+}
+
+.menu-btn:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.menu {
+	position: absolute;
+	top: calc(100% + 0.45rem);
+	right: 0;
+	min-width: 9.5rem;
+	padding: 0.3rem;
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
+	z-index: 10;
+}
+
+.menu-item {
+	display: block;
+	width: 100%;
+	padding: 0.45rem 0.7rem;
+	font-family: inherit;
+	font-size: 0.95rem;
+	text-align: left;
+	background: transparent;
+	border: 0;
+	border-radius: 7px;
+	color: var(--text);
+	cursor: pointer;
+}
+
+/* Scoped over the generic a:not(.btn) link colour (higher specificity). */
+.menu a.menu-item {
+	color: var(--text);
+	text-decoration: none;
+}
+
+.menu-item:hover {
+	background: color-mix(in srgb, var(--color-gold) 12%, transparent);
+	color: var(--accent);
+}
+
+.menu-item:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
 /* ---- shared bits ---- */
 
 .card {
