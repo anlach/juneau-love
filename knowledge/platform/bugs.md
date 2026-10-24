@@ -25,8 +25,6 @@ once-per-registration admin alert were silently consumed by log-only sends.
   user clicks a stale inbox link → "That link has already been used or has
   expired" (accurate — no fresh link was ever generated-and-sent).
 - Fix: set both secrets on the project (CLI `supabase secrets set`).
-  **Code follow-up:** dev mode should not write the stamps, and the FE could
-  surface the dev-mode link instead of pretending it was mailed.
 
 ### `notify-registration` dev-mode send poisons the idempotency stamp (2026-10-24)
 Sub-case of the above, called out because the data repair is separate: the
@@ -36,7 +34,6 @@ ever fire for that registration.
 - Data repair (owner console): `update public.users set admin_notified_at
   = null where email = 'lacharit@umich.edu';` then re-call the function (or
   let the guest's next page load trigger the fallback).
-- Code fix: skip the stamp when `MAIL_ENABLED` is false.
 
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
