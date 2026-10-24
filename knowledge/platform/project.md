@@ -232,6 +232,34 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   negatives) against the local stack; it runs `supabase db reset` first
   and restores the seed state.
 
+## CI (PR gate)
+
+- `.github/workflows/ci.yml` runs the two suites as **independent jobs**
+  (one failure must not hide the other's signal): `integration`
+  (flows.sh) and `playwright` (e2e/ against the production static build
+  with the runner's system Chromium). Both trigger on `pull_request` and
+  on `push` to main.
+- Branch protection on `main` requires the checks `integration` and
+  `playwright` (the job ids — the jobs have no display name on purpose,
+  so the check-run names stay exactly these).
+- Each job starts the local stack **reduced**: `supabase start` with
+  `--exclude` for studio, imgproxy, logflare, vector, supavisor,
+  postgres-meta and realtime (mailpit stays — GoTrue's `/otp` path mails
+  through it). ECR Public rate-limits GitHub's shared runner egress IPs
+  ("toomanyrequests: Data limit exceeded"), so fewer pulls matter; and
+  `supabase start` can exit 0 with a half-dead stack, so the job
+  health-gates a real backend afterwards (auth health, a live PostgREST
+  query — 503 without postgres, storage version) and restarts up to 6
+  times with 60s spacing.
+- `tests/ci-workflow.sh` is a contract test pinning that structure
+  (triggers, job names, stack start, suite commands, job independence).
+- The e2e helper mints the local service-role key via `supabase gen
+  bearer-jwt --role service_role` and reads the anon key from
+  `.env.test` — it must **not** parse `supabase status`'s default-mode
+  JSON blob, which is absent from stdout on GitHub runners (it broke the
+  whole suite there; `-o json` works, but the key-free-of-status approach
+  is the more robust one).
+
 ## Deploy
 
 ```sh
