@@ -35,7 +35,22 @@ jobs:
         run: npm ci
 
       - name: Start local Supabase stack
-        run: npx supabase start
+        # A fresh runner pulls ~12 images, and the ECR Public ones rate-limit
+        # the shared GitHub runner egress IPs (toomanyrequests) — the CLI's
+        # 4s retries are not enough, and it can exit 0 with a half-dead
+        # stack. Health-check the API and restart the stack until it is up.
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            npx supabase start
+            if curl -sf http://127.0.0.1:54321/auth/v1/health \
+               && curl -s -o /dev/null http://127.0.0.1:54321/rest/v1/; then
+              exit 0
+            fi
+            echo "::warning::Stack not healthy after attempt $attempt/6 — restarting"
+            npx supabase stop 2>/dev/null || true
+            sleep 60
+          done
+          npx supabase start
 
       - name: Integration tests
         run: bash supabase/tests/flows.sh
@@ -59,7 +74,21 @@ jobs:
         run: npm ci
 
       - name: Start local Supabase stack
-        run: npx supabase start
+        # See the integration job: ECR Public rate-limits the shared GitHub
+        # runner egress IPs, and `supabase start` can exit 0 with a
+        # half-dead stack — health-check and retry.
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            npx supabase start
+            if curl -sf http://127.0.0.1:54321/auth/v1/health \
+               && curl -s -o /dev/null http://127.0.0.1:54321/rest/v1/; then
+              exit 0
+            fi
+            echo "::warning::Stack not healthy after attempt $attempt/6 — restarting"
+            npx supabase stop 2>/dev/null || true
+            sleep 60
+          done
+          npx supabase start
 
       - name: Playwright e2e tests
         run: npx playwright test
