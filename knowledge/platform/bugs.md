@@ -13,18 +13,26 @@ live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
 
-### Function mail secrets were never set on the hosted project (2026-10-24)
-`send-login-link` and `notify-registration` ran in **dev mode** on the
-hosted project: with `MAIL_RELAY_URL`/`MAIL_RELAY_TOKEN` absent, they print
-the email to the function log and return `sent: true`. The sign-in page then
-claims the link was sent; nothing leaves the building. Worse, dev-mode
-"sends" still write their stamps (`users.last_login_link_sent_at` cooldown,
-`users.admin_notified_at` idempotency), so the 10-minute cooldown and the
-once-per-registration admin alert were silently consumed by log-only sends.
-- Symptom: "email said sent, never received"; admin approval alert missing;
-  user clicks a stale inbox link → "That link has already been used or has
-  expired" (accurate — no fresh link was ever generated-and-sent).
-- Fix: set both secrets on the project (CLI `supabase secrets set`).
+### `SITE_URL` function secret holds a local dev URL (2026-10-24)
+The hosted project's `SITE_URL` secret is a localhost value (code default is
+already `https://juneau.love` — the secret overrides it). Every link derived
+from it points at the dev machine: the registration-approval deep links
+(`?approve=<id>` / `?reject=<id>` and the list link in the
+`notify-registration` alert) and the magic-link redirect target in
+`send-login-link` / `registration-decision`
+(`generateMagicLink(email, ${SITE_URL}/login)`). Observed: the approval
+links in the first real admin alert opened localhost and were unusable.
+- Fix: `supabase secrets set SITE_URL=https://juneau.love`.
+- Follow-up (owner request): sweep the whole app for dev/local values that
+  leaked into prod — function secrets, code defaults, email templates, DNS.
+
+### Registration confirmation email is unbranded (2026-10-24)
+A guest's first email is GoTrue's default confirmation template — plain
+and unstyled — while the site's own emails (login link, registration
+alert) are branded with a proper button. Want the confirmation email to
+match: official-looking, branded, with a styled button. Fix direction:
+customize GoTrue's email templates (dashboard → Authentication → Emails)
+reusing the site's email design from `supabase/functions/_shared`.
 
 ### `notify-registration` dev-mode send poisons the idempotency stamp (2026-10-24)
 Sub-case of the above, called out because the data repair is separate: the
@@ -47,6 +55,21 @@ would break auth mail again.
   reverse). Candidate for a Supabase support ticket.
 
 ## FIXED
+
+### Function mail secrets missing on the hosted project (2026-10-24)
+`send-login-link` and `notify-registration` ran in **dev mode** on the
+hosted project: with `MAIL_RELAY_URL`/`MAIL_RELAY_TOKEN` absent, they print
+the email to the function log and return `sent: true`. The sign-in page then
+claims the link was sent; nothing leaves the building. Worse, dev-mode
+"sends" still write their stamps (`users.last_login_link_sent_at` cooldown,
+`users.admin_notified_at` idempotency), so the 10-minute cooldown and the
+once-per-registration admin alert were silently consumed by log-only sends.
+- Symptom: "email said sent, never received"; admin approval alert missing;
+  user clicks a stale inbox link → "That link has already been used or has
+  expired" (accurate — no fresh link was ever generated-and-sent).
+- Fix: set both secrets on the project (CLI `supabase secrets set`),
+  06:23 UTC 2026-10-24; first real relay delivery verified 06:25:55 and
+  admin sign-in via the site confirmed working.
 
 ### DKIM TXT published corrupt → umich 451 "denied by local policy" (2026-10-24)
 The published `mail._domainkey.juneau.love` contained stray spaces inside
