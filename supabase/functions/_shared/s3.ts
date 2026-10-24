@@ -23,32 +23,57 @@
 // live under an origin-relative path prefix: /storage/v1/s3/<bucket>/<key>
 // (Kong strips /storage/v1 before forwarding; storage-api re-prepends its
 // S3_PROTOCOL_PREFIX to the canonical URI, so the prefix must be part of
-// the *signed* path, not just the request URL). Set S3_PATH_PREFIX to
-// "/storage/v1/s3" (with S3_ENDPOINT as the bare origin
-// http://127.0.0.1:54321) to test against the local stack; leave it unset
-// for Hippius. The S3_* values for the local stack are the CLI's built-in
-// defaults — see supabase/config.toml [edge_runtime.secrets].
+// the *signed* path, not just the request URL). The local topology is
+// selected by JL_ENV = "dev" (supabase/config.toml [edge_runtime.secrets])
+// — endpoint, path prefix, region and the CLI's built-in S3 credentials
+// are local constants below, so the local stack needs no S3_* env at all.
+
+import { JL_ENV } from "./index.ts";
 
 const encoder = new TextEncoder();
 
 /**
- * Environment for the assets bucket.
- * Hosted: set via `supabase secrets set`. Local stack: see
- * [edge_runtime.secrets] in supabase/config.toml.
+ * Per-environment bucket topology, selected by JL_ENV (index.ts): prod
+ * signs against Hippius, dev against the local CLI stack's storage S3
+ * protocol. Fixed per environment by design — NOT function env — so a
+ * stale secret can no longer point a prod function at the dev machine
+ * (the 2026-10-24 SITE_URL bug; the local-only S3_* keys were part of the
+ * same poisoned batch — knowledge/platform/bugs.md).
+ */
+const TOPOLOGY =
+  JL_ENV === "dev"
+    ? { endpoint: "http://127.0.0.1:54321", pathPrefix: "/storage/v1/s3", region: "local" }
+    : { endpoint: "https://s3.hippius.com", pathPrefix: "", region: "decentralized" };
+
+/**
+ * The local CLI stack's built-in S3 credentials: stable defaults printed
+ * by `supabase status --output env`, not a secret (they were committed in
+ * supabase/config.toml). Prod must set the real Hippius keys as function
+ * secrets; in dev these make the local stack work with zero S3_* env.
+ */
+const LOCAL_CREDENTIALS = {
+  accessKeyId: "625729a08b95bf1b7ff351a663f3a23c",
+  secretAccessKey: "850181e4652dd023b7a98c58ae0d2d34bd487ee0cc3254aed6eda37307425907",
+};
+
+/**
+ * Environment for the assets bucket. Topology from JL_ENV; the bucket name
+ * and the credentials are function env (real secrets on the hosted
+ * project; the bucket name is the same in both environments).
  */
 export const S3 = {
   /** Origin (scheme://host[:port]) the object URLs are built against. */
-  endpoint: (Deno.env.get("S3_ENDPOINT") ?? "https://s3.hippius.com").replace(/\/+$/, ""),
+  endpoint: TOPOLOGY.endpoint,
   /**
    * Origin-relative path between the origin and the bucket, e.g.
    * "/storage/v1/s3" for the local stack. Empty for Hippius. Both the
    * request URL and the signed canonical path include it.
    */
-  pathPrefix: (Deno.env.get("S3_PATH_PREFIX") ?? "").replace(/\/+$/, ""),
-  region: Deno.env.get("S3_REGION") ?? "decentralized",
-  bucket: Deno.env.get("S3_BUCKET") ?? "",
-  accessKeyId: Deno.env.get("S3_ACCESS_KEY_ID") ?? "",
-  secretAccessKey: Deno.env.get("S3_SECRET_ACCESS_KEY") ?? "",
+  pathPrefix: TOPOLOGY.pathPrefix,
+  region: TOPOLOGY.region,
+  bucket: Deno.env.get("S3_BUCKET") ?? "juneau-assets",
+  accessKeyId: Deno.env.get("S3_ACCESS_KEY_ID") ?? (JL_ENV === "dev" ? LOCAL_CREDENTIALS.accessKeyId : ""),
+  secretAccessKey: Deno.env.get("S3_SECRET_ACCESS_KEY") ?? (JL_ENV === "dev" ? LOCAL_CREDENTIALS.secretAccessKey : ""),
 };
 
 /** True when the edge function's S3 env is complete enough to presign. */
@@ -200,7 +225,8 @@ export interface PresignInput {
  * browser — the Hippius gateway answers CORS preflights itself.
  */
 export async function presignS3ObjectUrl(input: PresignInput): Promise<{ url: string; expiresAt: string }> {
-  if (!s3Configured()) throw new Error("S3 env not configured (S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY)");
+  if (!s3Configured())
+    throw new Error("S3 env not configured (S3 credentials, or JL_ENV=dev for the local stack defaults)");
   const host = new URL(S3.endpoint).host;
   const path = `${S3.pathPrefix}/${S3.bucket}/${input.key.split("/").map(rfc3986).join("/")}`;
   const timestamp = input.timestamp ?? amzTimestamp();

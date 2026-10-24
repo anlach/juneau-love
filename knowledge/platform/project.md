@@ -2,10 +2,11 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
 ---
 
 # Supabase project
@@ -44,10 +45,10 @@ asset flow without Hippius credentials:
 | | Hippius (hosted) | Local stack |
 |---|---|---|
 | endpoint | `https://s3.hippius.com` | `http://127.0.0.1:54321` (origin) |
-| path prefix | — (bucket at `/`) | `/storage/v1/s3` — objects live at `/storage/v1/s3/<bucket>/<key>`, and the prefix is part of the **signed** canonical path (see `S3_PATH_PREFIX` in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)) |
+| path prefix | — (bucket at `/`) | `/storage/v1/s3` — objects live at `/storage/v1/s3/<bucket>/<key>`, and the prefix is part of the **signed** canonical path (the `JL_ENV = "dev"` topology in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)) |
 | region | `decentralized` (the value to sign with; `GetBucketLocation` returns `us-east-1`, but the client still signs `decentralized`) | `local` |
 | bucket | `juneau-assets` — private (default policy, no public access; the key in the environment can do bucket-scoped ops, but account-level `ListBuckets` is 403) | `juneau-assets` — a storage bucket that must be created per stack (it survives normal restarts but not `supabase db reset`; see [Local development](#local-development-differs-from-hosted)) |
-| credentials | Hippius access key (`hip_…` id) + secret, held only as edge-function secrets (see [Secrets](#secrets)) | the CLI's built-in local-stack defaults (stable constants, printed by `supabase status`) — committed in `supabase/config.toml` `[edge_runtime.secrets]`, not secrets |
+| credentials | Hippius access key (`hip_…` id) + secret, held only as edge-function secrets (see [Secrets](#secrets)) | the CLI's built-in local-stack defaults — hardcoded in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) as the `JL_ENV = "dev"` fallback (stable constants, printed by `supabase status`; not secrets) |
 
 SigV4 quirks shared by **both** endpoints (verified against the live
 Hippius gateway on 2026-10-18 and against local storage-api v1.82.1 on
@@ -126,9 +127,9 @@ Per [Client authentication](../api/client-auth.md):
 | Mail relay URL | `MAIL_RELAY_URL` edge function secret (`https://mail.juneau.love` — not a secret, but kept with the token so deploy is one command) | repo, client env |
 | Mail relay token | `MAIL_RELAY_TOKEN` edge function secret; same value on the VPS in `/etc/mail-relay/env` | repo, client env |
 | Maddy submission password (GoTrue) | plaintext only in the Supabase project SMTP setting; on the VPS only as the hash in `/etc/maddy/smtp_passwd` | repo, client env |
-| S3 access key id | hosted: `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius-local-stack)); local: `config.toml` (CLI default, not a secret) | client env |
-| S3 secret access key | hosted: `S3_SECRET_ACCESS_KEY` edge function secret; local: `config.toml` | client env |
-| S3 bucket name | `S3_BUCKET` edge function secret (`juneau-assets`) | repo, client env |
+| S3 access key id | hosted: `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius-local-stack)); local: the CLI default hardcoded in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) (not a secret) | client env |
+| S3 secret access key | hosted: `S3_SECRET_ACCESS_KEY` edge function secret; local: the same dev fallback in `_shared/s3.ts` | client env |
+| JL_ENV (env switch, not a secret) | local: `config.toml` `[edge_runtime.secrets]` (`JL_ENV = "dev"`); hosted: **unset** (= prod) | the hosted project — a stale env-topology secret there is exactly the 2026-10-24 localhost `SITE_URL` bug ([Bug list](/bugs.md)) |
 | anon key | public by design (RLS is the boundary); also the `SUPABASE_ANON_KEY` edge function secret the asset functions use to call PostgREST as the user | — it ships in the browser bundle anyway |
 
 ## First-admin bootstrap
@@ -163,27 +164,35 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   `supabase/config.toml` — exposed to every local edge function as a
   container env var. (CLI 2.121+ rejects `[functions.<name>.env]` tables:
   `supabase start` fails with `invalid keys: env`. The section name says
-  secrets, but plain local-dev values work fine — the local S3 config
-  lives there, below.) Set `SITE_URL = "http://localhost:3000"`, matching
-  `[auth] site_url` — the functions-config and secrets are snapshotted
-  into the runtime at `supabase start`, so restart after changing them.
-  Without it, functions fall back to the `https://juneau.love` default,
-  and GoTrue's `generate_link` **silently rewrites any `redirect_to`
-  whose origin doesn't match its configured `site_url` to the bare
-  configured site URL** — magic links then land on `/` instead of
-  `/login` (verified 2026-10-20, GoTrue v2.197.0: mismatched origin
-  rewritten, same-origin paths preserved). On the hosted project the
+  secrets, but plain local-dev values work fine.) It carries one value:
+  `JL_ENV = "dev"`, which selects the local topology in the function code
+  — site URL `http://localhost:3000` (must match `[auth] site_url`) and
+  the local storage S3 settings (see
+  [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)). The
+  functions-config and secrets are snapshotted into the runtime at
+  `supabase start`, so restart after changing them. GoTrue's
+  `generate_link` **silently rewrites any `redirect_to` whose origin
+  doesn't match its configured `site_url` to the bare configured site
+  URL** — magic links then land on `/` instead of `/login` (verified
+  2026-10-20, GoTrue v2.197.0: mismatched origin rewritten, same-origin
+  paths preserved). On the hosted project the
   dashboard `site_url` must be `https://juneau.love` — at first deploy it
   was `http://localhost:3000` (a copy of the local value), so GoTrue would
   have silently rewritten every magic link to localhost; it is set via the
   same `PATCH /config/auth` as the SMTP config
   ([Mail (self-hosted Maddy)](/mail.md), verified live 2026-10-22).
+  The hosted project sets **no `JL_ENV`** (= prod) and **no
+  env-topology secrets at all** — a stale env-specific secret on the
+  hosted project is exactly the 2026-10-24 localhost `SITE_URL` bug
+  ([Bug list](/bugs.md)).
 - **The local asset flow uses the local stack's S3 protocol** — the
   asset functions run unchanged against
   `http://127.0.0.1:54321/storage/v1/s3` instead of Hippius (see
-  [Assets S3](#assets-s3-hippius-local-stack)). `config.toml`
-  `[edge_runtime.secrets]` carries the `S3_*` values (endpoint, path
-  prefix, region, bucket, CLI-default credentials). The `juneau-assets`
+  [Assets S3](#assets-s3-hippius-local-stack)). The local S3 topology
+  (endpoint, path prefix, region, and the CLI-default credentials) is the
+  `JL_ENV = "dev"` branch in
+  [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) — no `S3_*`
+  env needed. The `juneau-assets`
   storage bucket must exist in local storage — create it once after a
   fresh `supabase start` or `supabase db reset` (service role from
   `supabase status --output env`):
@@ -242,7 +251,9 @@ supabase db advisors    # RLS / schema health check after changes
 # edge functions (secrets first; send-login-link and
 # notify-registration are public — --no-verify-jwt persists that):
 supabase secrets set MAIL_RELAY_URL='https://mail.juneau.love' MAIL_RELAY_TOKEN='<token>'
-supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
+supabase secrets set S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
+# no SITE_URL / JL_ENV / S3 topology secrets — on the hosted project
+# JL_ENV is unset (= prod) and the topology is code (bug list, 2026-10-24)
 supabase functions deploy send-login-link --no-verify-jwt
 supabase functions deploy notify-registration --no-verify-jwt
 supabase functions deploy registration-decision

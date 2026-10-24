@@ -2,7 +2,7 @@
 type: project-notes
 title: Bug list
 description: Running log of real bugs found in the hosted Supabase project, the mail stack, and the site — with root cause, fix, and status. Newest first.
-generated: { by: pi, at: 2026-10-24T06:25:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
 ---
 
 # Bug list
@@ -13,18 +13,42 @@ live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
 
-### `SITE_URL` function secret holds a local dev URL (2026-10-24)
-The hosted project's `SITE_URL` secret is a localhost value (code default is
-already `https://juneau.love` — the secret overrides it). Every link derived
-from it points at the dev machine: the registration-approval deep links
-(`?approve=<id>` / `?reject=<id>` and the list link in the
+### Env-specific topology smuggled in as function secrets (`SITE_URL` → localhost, S3 env) (2026-10-24)
+The 2026-10-24 06:23Z secret batch copied local-stack values into the
+hosted project. `SITE_URL` held `http://localhost:3000` (the code default
+was already `https://juneau.love` — the secret overrides it), so every
+derived link pointed at the dev machine: the registration-approval deep
+links (`?approve=<id>` / `?reject=<id>` and the list link in the
 `notify-registration` alert) and the magic-link redirect target in
 `send-login-link` / `registration-decision`
 (`generateMagicLink(email, ${SITE_URL}/login)`). Observed: the approval
 links in the first real admin alert opened localhost and were unusable.
-- Fix: `supabase secrets set SITE_URL=https://juneau.love`.
-- Follow-up (owner request): sweep the whole app for dev/local values that
-  leaked into prod — function secrets, code defaults, email templates, DNS.
+The same batch also set `S3_ENDPOINT` / `S3_PATH_PREFIX` / `S3_REGION` —
+keys that exist only in the local `config.toml` — and re-stamped
+`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (secret values are unreadable;
+if those hold the local CLI defaults, hosted presigned asset URLs point at
+`http://127.0.0.1:54321` with the wrong keys). The Hippius keys in the dev
+shell are live-verified (2026-10-24, `supabase/tests/s3-presign.ts`
+round-trip) and available for re-setting if needed.
+- Root cause: environment-derived **non-secret** topology (site URL,
+  local-stack S3 settings) was overridable per environment via function
+  secrets, so a stale local write silently wins over the prod code default.
+- Fix (code, 2026-10-24): a `JL_ENV` function env (`dev` | `prod`; unset
+  or any non-`dev` value = prod) selects the topology in `_shared` —
+  `SITE_URL`, the S3 endpoint/path-prefix/region, and the dev S3
+  credentials are now per-environment constants; only real secrets (mail
+  relay, prod S3 credentials) stay in the function env. Local:
+  `config.toml` `[edge_runtime.secrets]` carries just `JL_ENV = "dev"`.
+- Fix (deploy, pending): unset the topology secrets on the hosted project
+  (`SITE_URL`, `S3_ENDPOINT`, `S3_PATH_PREFIX`, `S3_REGION`, `S3_BUCKET`)
+  and redeploy all five functions (all import `_shared`).
+- Verify: a fresh admin alert / approval email whose links open
+  `https://juneau.love`; hosted gallery image URLs pointing at
+  `s3.hippius.com` (if they point at 127.0.0.1, the S3 credential secrets
+  are the local defaults — re-set the Hippius keys).
+- Follow-up (owner request, still open): sweep the whole app for
+  dev/local values that leaked into prod — code defaults, email templates,
+  DNS (function secrets are covered above).
 
 ### Registration confirmation email is unbranded (2026-10-24)
 A guest's first email is GoTrue's default confirmation template — plain

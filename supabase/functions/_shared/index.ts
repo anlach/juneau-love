@@ -29,8 +29,29 @@ export const MAIL_RELAY_TOKEN = Deno.env.get("MAIL_RELAY_TOKEN") ?? "";
 /** True when emails are actually delivered (the relay is configured). */
 export const MAIL_ENABLED = Boolean(MAIL_RELAY_URL && MAIL_RELAY_TOKEN);
 
-/** The site's origin (login links redirect here). Secret for prod override. */
-export const SITE_URL = (Deno.env.get("SITE_URL") ?? "https://juneau.love").replace(/\/$/, "");
+/**
+ * Which environment this function instance runs in: "dev" (the local CLI
+ * stack) or "prod" (the hosted project). Set `JL_ENV = "dev"` in
+ * supabase/config.toml's `[edge_runtime.secrets]` for the local stack; the
+ * hosted project leaves it unset. Only the literal value `"dev"` switches
+ * to local — unset, `"prod"`, or any other value means prod, so a typo can
+ * never silently dev-ify a prod function.
+ *
+ * JL_ENV selects environment-derived NON-SECRET topology: the site URL
+ * (below) and the S3 endpoint/path-prefix/region in s3.ts. Real secrets —
+ * the mail relay URL/token and the S3 credentials — are still read from the
+ * function env in both environments (dev simply sets no relay, which is
+ * the mail dev mode). The topology is deliberately not env-configurable:
+ * the hosted project carried a stale `SITE_URL=http://localhost:3000`
+ * secret that overrode the prod default and pointed every
+ * registration-approval link at the dev machine (2026-10-24 —
+ * knowledge/platform/bugs.md). An env-specific non-secret has no business
+ * being a secret.
+ */
+export const JL_ENV: "dev" | "prod" = Deno.env.get("JL_ENV") === "dev" ? "dev" : "prod";
+
+/** The site's origin (login-link redirect target, registration deep links). */
+export const SITE_URL = (JL_ENV === "dev" ? "http://localhost:3000" : "https://juneau.love").replace(/\/$/, "");
 
 /** JSON response helper. Status may be a plain number or { status, headers }. */
 export function json(
