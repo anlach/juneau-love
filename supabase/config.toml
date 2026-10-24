@@ -51,10 +51,5 @@ verify_jwt = false
 # (knowledge/platform/bugs.md). Restart the stack after changing this.
 JL_ENV = "dev"
 
-# The juneau-assets bucket must exist in local storage: create it once per
-# stack (or after `supabase db reset`) with:
-#   curl -sS -X POST http://127.0.0.1:54321/storage/v1/bucket \
-#     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-#     -H 'Content-Type: application/json' \
-#     -d '{"id":"juneau-assets","name":"juneau-assets","private":true}'
-# (SUPABASE_SERVICE_ROLE_KEY from `supabase status --output env`).
+# The juneau-assets bucket is created by supabase/seed.sql (idempotently, on
+# every fresh stack boot / `supabase db reset`) — nothing to do manually.

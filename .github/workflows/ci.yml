@@ -1,0 +1,116 @@
+# PR gate: runs the two test suites as independent jobs (one fails without
+# blocking the other's signal). Each job starts the local Supabase stack on
+# an ephemeral runner (Docker is preinstalled) with migrations + seed applied.
+#
+# Check names for branch protection on main: `integration`, `playwright`
+# (job ids — the jobs deliberately have no display name, so the check-run
+# names stay exactly these).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # supabase/tests/flows.sh — drives the full guest journey (register,
+  # confirm, approve, login link, guest content, reject, RLS negatives)
+  # through the local stack, including the real edge functions via Kong.
+  # It runs `supabase db reset` itself, so no separate reset step.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase stack
+        # Only the services the suites touch: skipping studio, imgproxy,
+        # logflare, vector, supavisor, postgres-meta and realtime
+        # (mailpit stays — GoTrue's /otp path mails through it) cuts the
+        # image pulls in half — ECR Public rate-limits GitHub's
+        # shared runner egress IPs, and a failed pull can leave the stack
+        # half-dead while the CLI still exits 0. Health-check the real
+        # backends afterwards (auth, a live PostgREST query, storage) and
+        # restart the stack until it is actually up.
+        run: |
+          ANON=$(sed -n 's/^PUBLIC_SUPABASE_ANON_KEY=//p' .env.test)
+          for attempt in 1 2 3 4 5 6; do
+            npx supabase start --exclude studio --exclude imgproxy \
+              --exclude logflare --exclude vector --exclude supavisor \
+              --exclude postgres-meta --exclude realtime || true
+            if curl -sf http://127.0.0.1:54321/auth/v1/health \
+               && curl -sf -H "apikey: $ANON" 'http://127.0.0.1:54321/rest/v1/roles?select=count' \
+               && curl -sf http://127.0.0.1:54321/storage/v1/version; then
+              exit 0
+            fi
+            echo "::warning::Stack not healthy after attempt $attempt/6 — restarting"
+            npx supabase stop 2>/dev/null || true
+            sleep 60
+          done
+          npx supabase start --exclude studio --exclude imgproxy \
+            --exclude logflare --exclude vector --exclude supavisor \
+            --exclude postgres-meta --exclude realtime
+
+      - name: Integration tests
+        run: bash supabase/tests/flows.sh
+
+  # e2e/ — Playwright suite against the production static build (served by
+  # the webServer step in playwright.config.ts) with the runner's system
+  # Chromium, per the config's executablePath.
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase stack
+        # Same reduced, health-gated start as the integration job: ECR
+        # Public rate-limits the shared GitHub runner egress IPs, and
+        # `supabase start` can exit 0 with a half-dead stack.
+        run: |
+          ANON=$(sed -n 's/^PUBLIC_SUPABASE_ANON_KEY=//p' .env.test)
+          for attempt in 1 2 3 4 5 6; do
+            npx supabase start --exclude studio --exclude imgproxy \
+              --exclude logflare --exclude vector --exclude supavisor \
+              --exclude postgres-meta --exclude realtime || true
+            if curl -sf http://127.0.0.1:54321/auth/v1/health \
+               && curl -sf -H "apikey: $ANON" 'http://127.0.0.1:54321/rest/v1/roles?select=count' \
+               && curl -sf http://127.0.0.1:54321/storage/v1/version; then
+              exit 0
+            fi
+            echo "::warning::Stack not healthy after attempt $attempt/6 — restarting"
+            npx supabase stop 2>/dev/null || true
+            sleep 60
+          done
+          npx supabase start --exclude studio --exclude imgproxy \
+            --exclude logflare --exclude vector --exclude supavisor \
+            --exclude postgres-meta --exclude realtime
+
+      - name: Playwright e2e tests
+        run: npx playwright test
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-artifacts
+          path: test-results/
+          if-no-files-found: ignore

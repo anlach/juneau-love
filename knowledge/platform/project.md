@@ -47,7 +47,7 @@ asset flow without Hippius credentials:
 | endpoint | `https://s3.hippius.com` | `http://127.0.0.1:54321` (origin) |
 | path prefix | — (bucket at `/`) | `/storage/v1/s3` — objects live at `/storage/v1/s3/<bucket>/<key>`, and the prefix is part of the **signed** canonical path (the `JL_ENV = "dev"` topology in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts)) |
 | region | `decentralized` (the value to sign with; `GetBucketLocation` returns `us-east-1`, but the client still signs `decentralized`) | `local` |
-| bucket | `juneau-assets` — private (default policy, no public access; the key in the environment can do bucket-scoped ops, but account-level `ListBuckets` is 403) | `juneau-assets` — a storage bucket that must be created per stack (it survives normal restarts but not `supabase db reset`; see [Local development](#local-development-differs-from-hosted)) |
+| bucket | `juneau-assets` — private (default policy, no public access; the key in the environment can do bucket-scoped ops, but account-level `ListBuckets` is 403) | `juneau-assets` — created idempotently by `supabase/seed.sql` on every fresh boot / `supabase db reset` (it does not survive the reset) |
 | credentials | Hippius access key (`hip_…` id) + secret, held only as edge-function secrets (see [Secrets](#secrets)) | the CLI's built-in local-stack defaults — hardcoded in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) as the `JL_ENV = "dev"` fallback (stable constants, printed by `supabase status`; not secrets) |
 
 SigV4 quirks shared by **both** endpoints (verified against the live
@@ -193,16 +193,9 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   `JL_ENV = "dev"` branch in
   [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) — no `S3_*`
   env needed. The `juneau-assets`
-  storage bucket must exist in local storage — create it once after a
-  fresh `supabase start` or `supabase db reset` (service role from
-  `supabase status --output env`):
-
-  ```sh
-  curl -sS -X POST http://127.0.0.1:54321/storage/v1/bucket \
-    -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-    -H 'Content-Type: application/json' \
-    -d '{"id":"juneau-assets","name":"juneau-assets","private":true}'
-  ```
+  storage bucket is created idempotently by `supabase/seed.sql` on every
+  fresh `supabase start` / `supabase db reset` (the `storage.buckets` row
+  does not survive the reset).
 - **Email autoconfirm is on locally** (`GOTRUE_MAILER_AUTOCONFIRM=true`) —
   API signups are confirmed immediately, so the confirmation-link path
   cannot be exercised locally. Hosted keeps confirmation enabled.
@@ -238,6 +231,34 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   confirm → approve → link → click → guest content → reject → guard
   negatives) against the local stack; it runs `supabase db reset` first
   and restores the seed state.
+
+## CI (PR gate)
+
+- `.github/workflows/ci.yml` runs the two suites as **independent jobs**
+  (one failure must not hide the other's signal): `integration`
+  (flows.sh) and `playwright` (e2e/ against the production static build
+  with the runner's system Chromium). Both trigger on `pull_request` and
+  on `push` to main.
+- Branch protection on `main` requires the checks `integration` and
+  `playwright` (the job ids — the jobs have no display name on purpose,
+  so the check-run names stay exactly these).
+- Each job starts the local stack **reduced**: `supabase start` with
+  `--exclude` for studio, imgproxy, logflare, vector, supavisor,
+  postgres-meta and realtime (mailpit stays — GoTrue's `/otp` path mails
+  through it). ECR Public rate-limits GitHub's shared runner egress IPs
+  ("toomanyrequests: Data limit exceeded"), so fewer pulls matter; and
+  `supabase start` can exit 0 with a half-dead stack, so the job
+  health-gates a real backend afterwards (auth health, a live PostgREST
+  query — 503 without postgres, storage version) and restarts up to 6
+  times with 60s spacing.
+- `tests/ci-workflow.sh` is a contract test pinning that structure
+  (triggers, job names, stack start, suite commands, job independence).
+- The e2e helper mints the local service-role key via `supabase gen
+  bearer-jwt --role service_role` and reads the anon key from
+  `.env.test` — it must **not** parse `supabase status`'s default-mode
+  JSON blob, which is absent from stdout on GitHub runners (it broke the
+  whole suite there; `-o json` works, but the key-free-of-status approach
+  is the more robust one).
 
 ## Deploy
 
