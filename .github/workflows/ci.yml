@@ -1,0 +1,73 @@
+# PR gate: runs the two test suites as independent jobs (one fails without
+# blocking the other's signal). Both jobs recreate the local development
+# setup on an ephemeral runner — Docker is preinstalled on ubuntu-latest,
+# so `supabase start` (Docker Compose under the hood) gives each job a
+# pristine local Supabase stack with migrations + seed applied.
+#
+# Check names for branch protection on main: `integration`, `playwright`
+# (job ids — the jobs deliberately have no display name, so the check-run
+# names stay exactly these).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # supabase/tests/flows.sh — drives the full guest journey (register,
+  # confirm, approve, login link, guest content, reject, RLS negatives)
+  # through the local stack, including the real edge functions via Kong.
+  # It runs `supabase db reset` itself, so no separate reset step.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase stack
+        run: npx supabase start
+
+      - name: Integration tests
+        run: bash supabase/tests/flows.sh
+
+  # e2e/ — Playwright suite against the production static build (served by
+  # the webServer step in playwright.config.ts) with the runner's system
+  # Chromium, per the config's executablePath.
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase stack
+        run: npx supabase start
+
+      - name: Playwright e2e tests
+        run: npx playwright test
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-artifacts
+          path: test-results/
+          if-no-files-found: ignore
