@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 
 /**
@@ -23,18 +24,29 @@ let cachedKeys: { service: string; anon: string } | null = null;
 
 function keys() {
 	if (cachedKeys) return cachedKeys;
-	// `npx supabase status` prints a JSON blob (plus a couple of WARN lines)
-	// with the local keys derived from the stack's JWT secret.
-	const out = execSync('npx supabase status', { encoding: 'utf8', cwd: process.cwd() });
-	const line = out
+	// Both keys are derived from the local stack's default JWT secret
+	// (config.toml, never customised): the anon key is committed in
+	// .env.test (the value the e2e build is baked with), and the
+	// service-role key is minted from the same secret. We deliberately do
+	// not parse `supabase status` — its JSON blob is absent from stdout on
+	// GitHub runners, which broke the whole suite there.
+	const anonLine = readFileSync('.env.test', 'utf8')
 		.split('\n')
-		.map((l) => l.trim())
-		.find((l) => l.startsWith('{'));
-	if (!line) throw new Error('could not find supabase status JSON — is the stack running?');
-	const d = JSON.parse(line) as { SERVICE_ROLE_KEY?: string; ANON_KEY?: string };
-	if (!d.SERVICE_ROLE_KEY || !d.ANON_KEY)
-		throw new Error('supabase status did not return the local keys');
-	cachedKeys = { service: d.SERVICE_ROLE_KEY, anon: d.ANON_KEY };
+		.find((l) => l.startsWith('PUBLIC_SUPABASE_ANON_KEY='));
+	if (!anonLine) throw new Error('.env.test has no PUBLIC_SUPABASE_ANON_KEY');
+	const service = execSync('npx supabase gen bearer-jwt --role service_role', {
+		encoding: 'utf8',
+		cwd: process.cwd()
+	})
+		.trim()
+		.split('\n')
+		.pop()!;
+	if (!service.startsWith('eyJ'))
+		throw new Error('could not mint the local service-role key');
+	cachedKeys = {
+		service,
+		anon: anonLine.slice('PUBLIC_SUPABASE_ANON_KEY='.length).trim()
+	};
 	return cachedKeys;
 }
 
