@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  GoTrue email template (magiclink), fetched by GoTrue — this is NOT
+  served to browsers as a page. The project setting
+  mailer_templates_magic_link_content must point at this file's URL
+  (https://juneau.love/email/magic-link.html): in GoTrue (v2.197.0) the
+  template content setting is a URL it GETs (relative = against SiteURL),
+  parsed with Go's html/template, cached 10 minutes; a fetch failure
+  silently falls back to GoTrue's unbranded default template.
+
+  The site's own login-link emails (send-login-link,
+  registration-decision) are sent by the edge functions, not GoTrue.
+  GoTrue's magiclink email goes out on the register page's
+  "already registered" probe (signInWithOtp with shouldCreateUser: false
+  for a known email) — that is the only path that uses it.
+
+  Variables (Go template actions, html/template auto-escaping — note the
+  actions below are written without their braces so this comment does not
+  break the template parse):
+    .ConfirmationURL   — the magiclink (token, type=magiclink, redirect_to=/login)
+    .Email             — the address
+    .Data.display_name — the display name from registration (may be absent —
+                         guarded with nested with actions so a nil or
+                         absent display name renders nothing)
+
+  Design matches the site's other emails (supabase/functions/_shared —
+  loginLinkEmail / registrationAlertEmail). Apply via the Management API,
+  read-back verified — knowledge/platform/mail.md, "Email templates".
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Sign in to juneau.love</title>
+</head>
+<body style="margin:0;padding:24px;background:#faf7f6;">
+  <div style="max-width:480px;margin:0 auto;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <p style="font-size:18px;color:#5c4048;margin:0 0 8px;">juneau.love</p>
+    <h1 style="font-size:20px;color:#1a1a1a;font-weight:600;margin:0 0 12px;">{{ with .Data }}{{ with .display_name }}Hi {{ . }}, {{ end }}{{ end }}here’s your link to sign in to juneau.love:</h1>
+    <p style="margin:24px 0;">
+      <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#b76e79;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:15px;">Sign in</a>
+    </p>
+    <p style="color:#777;font-size:13px;line-height:1.6;">This link is single-use and expires after about an hour. If you didn’t ask for it, you can safely ignore this email.</p>
+  </div>
+</body>
+</html>

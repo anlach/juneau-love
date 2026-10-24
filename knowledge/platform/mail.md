@@ -1,8 +1,8 @@
 ---
 type: project-notes
 title: Mail (self-hosted Maddy)
-description: The self-hosted mail stack on the VPS — Maddy for delivery, the HTTP->SMTP relay that edge functions must use, DNS records, and the Supabase SMTP/secret settings it requires.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-23T12:26:00Z }
+description: The self-hosted mail stack on the VPS — Maddy for delivery, the HTTP->SMTP relay that edge functions must use, DNS records, the GoTrue email templates, and the Supabase SMTP/secret settings it requires.
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:00:00Z }
 ---
 
 # Mail (self-hosted Maddy)
@@ -92,6 +92,45 @@ command (see [project notes](/project.md), Deploy).
   user `notify@juneau.love`, password per above, sender
   `notify@juneau.love`, sender name `juneau.love`, autoconfirm **off**,
   external email **on**. The command is in `infra/mail/README.md`.
+- GoTrue email templates: two `mailer_templates_*_content` URL settings
+  plus subjects — see [Email templates](#email-templates-gotrue) below.
+
+## Email templates (GoTrue)
+
+GoTrue's own auth emails — the signup confirmation, and the magiclink
+the register page's "already registered" probe triggers for a known
+email (the only path that uses the magiclink template) — are templated
+by project settings, not by site code:
+
+- The template **content** setting (`mailer_templates_*_content`) is a
+  **URL**, not inline HTML (GoTrue v2.197.0, verified in source): the
+  running GoTrue GETs it (relative values resolve against `SiteURL`),
+  parses the result with Go's `html/template`, and caches it for
+  10 minutes. The template **subject** settings (`mailer_subjects_*`)
+  are inline template strings.
+- **A fetch or parse failure silently falls back to the built-in
+  default template** — the email still goes out, just unbranded, with
+  no error anywhere. That is how the project shipped with the default
+  confirmation email while a (dead) inline-HTML "template" sat in the
+  setting (2026-10-24 — [bug list](/bugs.md)). Reading the setting back
+  is not a valid check that the template is live; verify with a real
+  send.
+- The rendered body is sent as `text/html`, with no plain-text part.
+- Confirmation/magiclink template variables: `.ConfirmationURL` (the
+  action link — both types use this name), `.Email`, `.Token`,
+  `.TokenHash`, `.Data` (user metadata — the registration's
+  `display_name`; may be nil, guard with nested `with` actions),
+  `.RedirectTo`, `.SiteURL`.
+- The templates are repo files served by the site: `static/email/`
+  (copied verbatim into the build). Their HTML comments must not
+  contain `{{ }}` — template actions inside comments break the parse
+  and trip the silent fallback. Project settings (Management API,
+  read-back verified 2026-10-24): `mailer_templates_confirmation_content`
+  = `https://juneau.love/email/confirmation.html`,
+  `mailer_templates_magic_link_content` =
+  `https://juneau.love/email/magic-link.html`, subjects
+  `mailer_subjects_confirmation` = "Confirm your juneau.love email",
+  `mailer_subjects_magic_link` = "Your juneau.love sign-in link".
 
 ## Local development
 

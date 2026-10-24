@@ -2,7 +2,7 @@
 type: auth-flow
 title: Client authentication (passwordless, login links)
 description: No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the login link in an email after approval. The link is a native GoTrue magiclink exchanged client-side for a Supabase session with stock supabase-js.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:00:00Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
@@ -66,8 +66,10 @@ createClient(url, anonKey, {
   on by default in GoTrue — there is no dashboard toggle to check;
   [project notes](../platform/project.md).)
 - Email confirmation is **enabled** (project setting) → GoTrue emails a
-  "confirm your email" link (Supabase auth email template, sent via the
-  project's email provider). **No session is created yet**; the FE shows
+  "confirm your email" link — branded, because the site serves GoTrue's
+  email templates (GoTrue fetches them by URL —
+  [Mail](../platform/mail.md), Email templates) — sent via the project's
+  SMTP. **No session is created yet**; the FE shows
   a session-independent "check your email to confirm your address"
   screen. (Locally, autoconfirm is on, so the account starts confirmed
   and the email is already a session-granting magiclink — [project
@@ -80,7 +82,9 @@ createClient(url, anonKey, {
   email form; a rejected account gets its rejection screen after signing
   in and cannot re-register). Side effect: the probe emails the returning
   guest a fresh login link — what [Flow 3](#flow-3--request-a-link) does,
-  minus the cooldown.
+  minus the cooldown. That email is GoTrue's own magiclink email, branded
+  via the site-served template ([Mail](../platform/mail.md),
+  Email templates).
 - Other errors (rate limit, malformed email) → stay on the form with the
   message.
 

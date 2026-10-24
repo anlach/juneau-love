@@ -2,7 +2,7 @@
 type: project-notes
 title: Bug list
 description: Running log of real bugs found in the hosted Supabase project, the mail stack, and the site — with root cause, fix, and status. Newest first.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:05:00Z }
 ---
 
 # Bug list
@@ -50,23 +50,6 @@ round-trip) and available for re-setting if needed.
   dev/local values that leaked into prod — code defaults, email templates,
   DNS (function secrets are covered above).
 
-### Registration confirmation email is unbranded (2026-10-24)
-A guest's first email is GoTrue's default confirmation template — plain
-and unstyled — while the site's own emails (login link, registration
-alert) are branded with a proper button. Want the confirmation email to
-match: official-looking, branded, with a styled button. Fix direction:
-customize GoTrue's email templates (dashboard → Authentication → Emails)
-reusing the site's email design from `supabase/functions/_shared`.
-
-### `notify-registration` dev-mode send poisons the idempotency stamp (2026-10-24)
-Sub-case of the above, called out because the data repair is separate: the
-23:03 guest registration (`lacharit@umich.edu`) alerted admins only to the
-function log and stamped `admin_notified_at`, so no real approval email will
-ever fire for that registration.
-- Data repair (owner console): `update public.users set admin_notified_at
-  = null where email = 'lacharit@umich.edu';` then re-call the function (or
-  let the guest's next page load trigger the fallback).
-
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
 `smtp_pass` in the body, but read-back shows the old value; every other
@@ -79,6 +62,40 @@ would break auth mail again.
   reverse). Candidate for a Supabase support ticket.
 
 ## FIXED
+
+### Registration confirmation email is unbranded (2026-10-24)
+A guest's first email is GoTrue's default confirmation template — plain
+and unstyled — while the site's own emails (login link, registration
+alert) are branded with a proper button. The register page's
+"already registered" probe emails the returning guest GoTrue's own
+magiclink email — unbranded the same way.
+- Root cause: in GoTrue (v2.197.0, latest tag) the template content
+  setting (`mailer_templates_*_content`) is a **URL** the running GoTrue
+  GETs (relative = against `SiteURL`), parsed with Go's `html/template`,
+  cached 10 minutes — not inline HTML. The project held the default
+  template's inline HTML in the setting; that is a malformed URL, so the
+  fetch failed and GoTrue **silently fell back to the built-in default**.
+  The stored "template" was dead config that could never apply, and the
+  fallback never errors.
+- Fix: the branded templates are static pages on the site —
+  `static/email/confirmation.html` and `static/email/magic-link.html`
+  (same design as the edge-function emails in `supabase/functions/_shared`)
+  — and the project settings point at them: `mailer_templates_confirmation_content`
+  = `https://juneau.love/email/confirmation.html`,
+  `mailer_templates_magic_link_content` =
+  `https://juneau.love/email/magic-link.html`, with subjects
+  `mailer_subjects_confirmation` = "Confirm your juneau.love email" and
+  `mailer_subjects_magic_link` = "Your juneau.love sign-in link". Applied
+  via the Management API, read-back verified.
+- Verified (2026-10-24): both templates parse and render under Go's
+  `html/template` with the real variable set (including nil / absent
+  `Data.display_name`); the Management API read-back matches. Final check:
+  a real test signup → branded confirmation email in the inbox (owner —
+  the only check that can't be run without a real mailbox). The silent
+  fallback means a broken template URL never breaks auth, only the
+  branding — so a future redesign must verify with a send, not by
+  reading the config back.
+- Mechanism details: [Mail](/mail.md), Email templates.
 
 ### Function mail secrets missing on the hosted project (2026-10-24)
 `send-login-link` and `notify-registration` ran in **dev mode** on the
