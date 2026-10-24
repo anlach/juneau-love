@@ -2,7 +2,7 @@
 type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password and log in via short-lived GoTrue magiclinks (no credential lives in this table); email-verification state is mirrored from auth.users.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T15:50:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:41:54Z }
 ---
 
 # users
@@ -127,6 +127,10 @@ $$;
   that case.
 - **Self read:** a signed-in user reads their own row to learn their
   approval state ([Current user state](../api/current-user-state.md)).
+- **Self display-name update:** a signed-in user changes their own
+  `display_name` from the change-name page — a [self-PATCH](../api/change-display-name.md)
+  of that one column (the guard's only self-writable column; not gated on
+  `status`; see [Change display name](../stories/change-display-name.md)).
 - **Guest name join:** the self-read policy is what blocks guests from
   reading other users' rows; the `guest_names` view (documented with
   [assets](/assets.md)) is the only sanctioned way an approved guest sees

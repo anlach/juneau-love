@@ -1,8 +1,8 @@
 ---
 type: component
 title: Shared components and conventions
-description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid) plus the StateScreen component for the signed-in status screens."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-23T00:01:00Z }
+description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid, the header account menu) plus the StateScreen component for the signed-in status screens."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:41:54Z }
 ---
 
 # Shared components
@@ -22,7 +22,12 @@ lived here: [Design tokens](/tokens.md).
     button styling in the nav)
   - ready → "Photos" (approved only), "Registrations"
     (`registrations:read` only), the display name (`.who`, italic muted),
-    "Sign out" (`.btn.small.ghost`, signs out and redirects home)
+    an **account menu**: `.menu-btn` (a stack of three lines, `aria-label`
+    `"Menu"`, `aria-haspopup="menu"`) toggles a `.menu` dropdown
+    (`role="menu"`) of `.menu-item` entries — "Change Name" (link to
+    `/change-name`) and "Sign Out" (signs out, redirects home — the old
+    bare-button behaviour). The menu closes on outside click, Escape, and
+    item click ([Change display name](../stories/change-display-name.md))
 - The root layout also owns `initAuth()` on mount and the favicon.
 
 ## Building blocks
@@ -37,6 +42,7 @@ lived here: [Design tokens](/tokens.md).
 | `.table` | Data table (registrations) | header row in `.muted`, hairline row separators, `.actions` cell right-aligned with small buttons |
 | `.gallery-grid` | Photo grid | auto-fill `minmax(180px, 1fr)`; 4:3 `object-fit: cover` images; hatched `.placeholder` when no presigned URL is available; caption shows uploader (italic) + caption |
 | `.spread` | Row of actions under a card | centered, wrapping |
+| `.menu-btn` / `.menu` / `.menu-item` | Header account menu (icon button + dropdown) | button toggles `aria-expanded`; dropdown is `role="menu"` positioned absolute below the button (`--bg-elevated` fill, hairline gold border, same shadow as `.card`); entries are full-width `role="menuitem"`, hover tinted with a gold mix |
 
 ## StateScreen (src/lib/components/StateScreen.svelte)
 
@@ -56,9 +62,21 @@ The "sign in to continue" (anonymous) and "not available to you"
 (non-admin) screens are inline in their routes — they are one-offs, not
 part of the state machine.
 
+## Change-name page (/change-name)
+
+The display-name self-edit page deliberately looks like the registration
+card — `.card`, `.display` h2, one `.field`, `.msg` feedback, `.btn` save.
+One field, one action. It is gated on a signed-in session, **not** on
+approval status (any signed-in user, including `pending`, may edit the
+name — the business rule in [Change display name]
+(../stories/change-display-name.md)); anonymous visitors get a sign-in
+card, and the field is prefilled from the profile once it has loaded.
+
 ## Depends on
 
 - [Design tokens](/tokens.md)
 - [Access by approval status](../stories/access-by-approval-status.md)
 - [Guest gallery](../stories/guest-gallery.md) (gallery grid),
-  [Review registrations](../stories/review-registrations.md) (table)
+  [Review registrations](../stories/review-registrations.md) (table),
+  [Change display name](../stories/change-display-name.md) (account menu,
+  change-name page)

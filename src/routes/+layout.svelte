@@ -11,6 +11,26 @@
 	const status = $derived(auth.kind === 'ready' ? auth.profile?.status ?? null : null);
 	const name = $derived(auth.profile?.display_name ?? undefined);
 
+	let menuOpen = $state(false);
+
+	// The account menu closes on outside click and Escape while open.
+	$effect(() => {
+		if (!menuOpen) return;
+		const onPointerDown = (e: PointerEvent) => {
+			if (e.target instanceof Element && e.target.closest('.account-menu')) return;
+			menuOpen = false;
+		};
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') menuOpen = false;
+		};
+		document.addEventListener('pointerdown', onPointerDown);
+		document.addEventListener('keydown', onKeyDown);
+		return () => {
+			document.removeEventListener('pointerdown', onPointerDown);
+			document.removeEventListener('keydown', onKeyDown);
+		};
+	});
+
 	onMount(() => initAuth());
 
 	// Admin-notification fallback (knowledge/api/notify-registration.md):
@@ -34,6 +54,7 @@
 	});
 
 	async function onSignOut() {
+		menuOpen = false;
 		await signOut();
 		await goto('/');
 	}
@@ -60,7 +81,40 @@
 				<a href="/registrations">Registrations</a>
 			{/if}
 			<span class="who">{name}</span>
-			<button class="btn small ghost" onclick={onSignOut}>Sign out</button>
+			<span class="account-menu">
+				<button
+					type="button"
+					class="menu-btn"
+					aria-label="Menu"
+					aria-haspopup="menu"
+					aria-expanded={menuOpen}
+					onclick={() => (menuOpen = !menuOpen)}
+				>
+					<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
+						<path
+							d="M1 1h14M1 6h14M1 11h14"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+						/>
+					</svg>
+				</button>
+				{#if menuOpen}
+					<div class="menu" role="menu" aria-label="Account">
+						<a
+							role="menuitem"
+							class="menu-item"
+							href="/change-name"
+							onclick={() => (menuOpen = false)}
+						>
+							Change Name
+						</a>
+						<button type="button" role="menuitem" class="menu-item" onclick={onSignOut}>
+							Sign Out
+						</button>
+					</div>
+				{/if}
+			</span>
 		{/if}
 	</nav>
 </header>
