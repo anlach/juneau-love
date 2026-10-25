@@ -13,6 +13,28 @@ live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
 
+### Mail relay process crashes on any submit-session error (2026-10-25)
+The relay's `:465` GoTrue submission handler takes the whole process down
+(HTTP relay + every edge-function mail send included) whenever a session
+errors. Observed in production 2026-10-25 02:49:32 UTC:
+`Uncaught (in promise) TypeError: Cannot convert object to primitive
+value` at `handleSubmitConn`'s error handler, relay down ~5 s (systemd
+restart), in the middle of the owner's registration attempts (the 02:14
+and 02:24 UTC confirmations delivered fine; the 02:49 session produced
+nothing).
+- Root cause: in Deno 2.9.7 `conn.remoteAddr` is a **null-prototype
+  object** (no `toString`/`valueOf`), so the `${conn.remoteAddr}`
+  interpolation in the error path throws the TypeError *while handling
+  the original error* → unhandled rejection → process exit. Two sites:
+  the outer catch (`session error (${conn.remoteAddr})`) and the
+  bad-credentials log. A single `AUTH PLAIN` with wrong credentials
+  crashes the relay — an internet scanner can kill the mail path.
+  Secondary: the inner catch's `await reply("451 …")` is unguarded, so
+  a reply write to a vanished client (RST/timeout) propagates to the
+  outer catch and hits the same landmine.
+- Repro: `infra/mail/test_relay_submit.py` (spawns the real `relay.ts`
+  against a local sink; bad-AUTH session kills the process).
+
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
 `smtp_pass` in the body, but read-back shows the old value; every other
