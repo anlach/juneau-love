@@ -291,6 +291,8 @@ def main():
     sink = Sink(sink_port)
     tpl_url = f"http://127.0.0.1:{tpl_port}/confirmation.html"
     TemplateServer(tpl_port, RESOLVED_DOC)
+    capture_dir = os.path.join(tmp, "captures")
+    os.mkdir(capture_dir)
 
     env = dict(os.environ)
     env.update(
@@ -305,10 +307,12 @@ def main():
             "SMTP_SUBMIT_KEY": key,
             "SMTP_SUBMIT_USER": SUBMIT_USER,
             "SMTP_SUBMIT_PASSWORD": SUBMIT_PASSWORD,
+            "SMTP_SUBMIT_CAPTURE_DIR": capture_dir,
         }
     )
     relay = subprocess.Popen(
-        ["deno", "run", "--allow-net", "--allow-env", f"--allow-read={tmp}", RELAY],
+        ["deno", "run", "--allow-net", "--allow-env", f"--allow-read={tmp}",
+         f"--allow-write={capture_dir}", RELAY],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -497,6 +501,39 @@ def main():
             check("text part derived from the resolved document", "confirm your email address" in text_decoded)
             check("relay logged the template resolution", "resolved template URL" in log_snapshot())
 
+        # -- 5. client vanishes mid-DATA -------------------------------------
+        print("\n[5] client closes mid-DATA (early EOF must be logged, not fatal)")
+        try:
+            c = Client(submit_port)
+            c.cmd("EHLO repro.test")
+            token = base64.b64encode(f"\0{SUBMIT_USER}\0{SUBMIT_PASSWORD}".encode()).decode()
+            c.cmd(f"AUTH PLAIN {token}")
+            c.cmd(f"MAIL FROM:<{SUBMIT_USER}>")
+            c.cmd(f"RCPT TO:<{RECIPIENT}>")
+            check("DATA ok (early-close)", c.code(c.cmd("DATA")) == "354")
+            # Headers only, no blank line, no terminator — then the socket
+            # goes away (what GoTrue's client appears to do in production).
+            c.send_data(gotrue_message().split("\r\n\r\n")[0])
+            c.close()
+        except Exception as e:
+            check("early-close session sent", False, repr(e))
+
+        time.sleep(1.0)
+        code = relay.poll()
+        check("relay process still alive after early EOF", code is None, f"exit code {code}")
+        check(
+            "early EOF logged for diagnosis",
+            "DATA ended before terminator" in log_snapshot(),
+            log_snapshot()[-400:],
+        )
+        captured = os.listdir(capture_dir) if os.path.isdir(capture_dir) else []
+        check("submissions were captured to disk", len(captured) >= 2, f"{captured}")
+        if captured:
+            first = sorted(captured)[0]
+            with open(os.path.join(capture_dir, first), "rb") as fh:
+                body = fh.read().decode("utf-8", "replace")
+            check("capture is a full GoTrue-shaped message", "Content-Transfer-Encoding: quoted-printable" in body and "\r\n\r\n" in body, body[:120])
+
     finally:
         relay.terminate()
         try:
@@ -509,7 +546,7 @@ def main():
     if failures:
         print(f"RESULT: FAIL ({len(failures)} check(s) failed: {', '.join(failures)})")
         return 1
-    print("RESULT: PASS (valid session, bad-AUTH survived, recovery OK, template URL resolved)")
+    print("RESULT: PASS (valid session, bad-AUTH survived, recovery OK, template URL resolved, early-EOF logged + captured)")
     return 0
 
 

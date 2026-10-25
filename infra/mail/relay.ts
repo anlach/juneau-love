@@ -68,6 +68,29 @@ const SUBMIT_KEY = Deno.env.get("SMTP_SUBMIT_KEY") ?? "/etc/mail-relay/tls/privk
 // The account GoTrue must authenticate as: Supabase's `smtp_user`.
 const SUBMIT_USER = Deno.env.get("SMTP_SUBMIT_USER") ?? FROM_ADDRESS;
 const SUBMIT_PASSWORD = Deno.env.get("SMTP_SUBMIT_PASSWORD") ?? "";
+// When set, every submission's raw DATA (de-dot-stuffed) is saved here so
+// what GoTrue actually sends can be inspected. Last 20 files kept.
+const SUBMIT_CAPTURE_DIR = Deno.env.get("SMTP_SUBMIT_CAPTURE_DIR") ?? "";
+
+let captureSeq = 0;
+async function captureSubmission(rcpts: string[], raw: string, how: string): Promise<void> {
+  if (!SUBMIT_CAPTURE_DIR) return;
+  try {
+    captureSeq += 1;
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const name = `${ts}-${captureSeq}.eml`;
+    await Deno.writeTextFile(`${SUBMIT_CAPTURE_DIR}/${name}`, raw);
+    const entries: string[] = [];
+    for await (const e of Deno.readDir(SUBMIT_CAPTURE_DIR)) entries.push(e.name);
+    entries.sort();
+    for (const old of entries.slice(0, Math.max(0, entries.length - 20))) {
+      try { await Deno.remove(`${SUBMIT_CAPTURE_DIR}/${old}`); } catch { /* gone */ }
+    }
+    console.log(`[submit] captured ${name} bytes=${raw.length} term=${how} rcpt=${rcpts.join(",")}`);
+  } catch (e) {
+    console.warn(`[submit] capture failed: ${errToString(e)}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP layer
@@ -679,20 +702,42 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
             const bodyLines: string[] = [];
             let size = 0;
             let tooBig = false;
-            for (;;) {
-              const l = await s.lines.next();
-              if (l === null || l === ".") break;
-              const un = l.startsWith("..") ? l.slice(1) : l; // de-dot-stuff
-              size += un.length + 2;
-              if (size > MAX_BODY_BYTES) tooBig = true;
-              bodyLines.push(un);
+            let term: "dot" | "eof" | "error" = "dot";
+            try {
+              for (;;) {
+                const l = await s.lines.next();
+                if (l === null) { term = "eof"; break; }
+                if (l === ".") break;
+                const un = l.startsWith("..") ? l.slice(1) : l; // de-dot-stuff
+                size += un.length + 2;
+                if (size > MAX_BODY_BYTES) tooBig = true;
+                bodyLines.push(un);
+              }
+            } catch (e) {
+              // Client hung up mid-DATA: the TLS stream rejects instead of
+              // ending cleanly. Treat as early termination, not a crash.
+              term = "error";
+            }
+            const rawSubmission = bodyLines.join("\r\n");
+            void captureSubmission(s.rcpts, rawSubmission, term);
+            if (term !== "dot") {
+              // Nothing deliverable: GoTrue's net/smtp client vanished
+              // before finishing DATA. Log the partial bytes for diagnosis.
+              console.error(`[submit] DATA ended before terminator (term=${term}) lines=${bodyLines.length} bytes=${rawSubmission.length} partial=<<${rawSubmission.slice(0, 400).replace(/\r\n/g, "\\n")}>>`);
+              try {
+                await reply("451 4.3.0 Incomplete data");
+              } catch {
+                // client already gone
+              }
+              s.rcpts = [];
+              break;
             }
             if (tooBig) {
               await reply("552 5.3.4 Message too large");
               break;
             }
             try {
-              const parsed = parseSubmission(bodyLines.join("\r\n"));
+              const parsed = parseSubmission(rawSubmission);
               if ("error" in parsed) throw new Error(parsed.error);
               const resolved = await resolveTemplateUrl(parsed.html);
               if (resolved !== parsed.html) {
