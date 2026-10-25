@@ -2,7 +2,7 @@
 type: auth-flow
 title: Client authentication (passwordless, login links)
 description: No passwords. Registration is email + display name; initial login is two steps — confirm the email, then click the login link in an email after approval. The link is a native GoTrue magiclink exchanged client-side for a Supabase session with stock supabase-js.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:00:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T17:02:53Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T18:44:57Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T14:48:34Z }
@@ -85,6 +85,13 @@ createClient(url, anonKey, {
   minus the cooldown. That email is GoTrue's own magiclink email, branded
   via the site-served template ([Mail](../platform/mail.md),
   Email templates).
+- A **500** on the signup call means GoTrue's confirmation email failed
+  *synchronously* (recipient gateway temp-reject; the whole signup —
+  user row included — rolled back, so nothing half-exists). The FE
+  retries the call 4× with backoff (10/30/60 s) while showing
+  "Registering… (attempt n of 4)" and, when exhausted, shows a friendly
+  "couldn't send the confirmation email just now — try again in a few
+  minutes" ([bugs](../platform/bugs.md)).
 - Other errors (rate limit, malformed email) → stay on the form with the
   message.
 

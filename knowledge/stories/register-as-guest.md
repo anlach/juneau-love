@@ -2,7 +2,7 @@
 type: user-story
 title: Register as a guest
 description: A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision. The admins are alerted about the new registration by email (with approve/reject links) as soon as it is made.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T15:50:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T17:02:53Z }
 ---
 
 # Register as a guest
@@ -81,6 +81,12 @@ site.
   previously emailed link may still be exchangeable briefly, but a
   rejected user gets nothing from it (RLS + rejection screen; see
   [Sign in with a login link](/sign-in-with-login-link.md)).
+- **A temp-rejected confirmation email is not a failed registration:**
+  the signup call can 500 when the recipient's gateway temp-rejects the
+  confirmation mail (observed: umich.edu); the whole signup rolls back
+  with it, so the FE retries a few times with backoff and, if that still
+  fails, tells the guest to try again in a few minutes — never a dead
+  end. (Recipient-gateway policy; [bugs](../platform/bugs.md).)
 - The confirmation email uses Supabase's auth email template; the
   post-approval email is our own invite (edge function; provider —
   [project notes](../platform/project.md)).

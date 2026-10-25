@@ -29,9 +29,10 @@ browser → Supabase edge functions (Deno)
               ▼
         Maddy   127.0.0.1:25          (DKIM signing, direct MX delivery → internet)
               ▲
-              │  SMTP 587 STARTTLS, user notify@juneau.love
-        Supabase GoTrue (auth emails — set in the project's SMTP config,
-        NOT through the relay)
+              │  SMTP 465 implicit TLS, user notify@juneau.love
+        Supabase GoTrue (auth emails) → relay's :465 GoTrue shim,
+              re-sent through sendMail() — see the shim section below;
+              the pre-2026-10-24 path was straight to Maddy's :587
 ```
 
 The install/runbook lives in `infra/mail/` in the repo (relay source,
@@ -53,9 +54,9 @@ email over HTTPS and speaks SMTP to Maddy on loopback.
 | Piece | Role | Notes |
 |---|---|---|
 | Maddy | The mail server: DKIM signing, direct MX delivery | send-only; loopback `:25` hand-off + `:587` STARTTLS submission; no local mailboxes |
-| relay.ts (`infra/mail/relay.ts`) | HTTP→SMTP for the edge functions | loopback only, bearer-token auth, ≤10 recipients / 256 KB per part, multipart/alternative (text+html), RFC 2047 subjects, fixed From |
-| nginx (mail vhost) | TLS at `mail.juneau.love:443` | server blocks on the existing nginx (which fronts other sites on :80/:443); certbot webroot issues + auto-renews; the only public mail-adjacent surface |
-| GoTrue SMTP | Auth emails (confirmation, signup) | Supabase "custom SMTP" project setting → `mail.juneau.love:587`; `rate_limit_email_sent` is 30 msg/hour (the GoTrue default; it had been set to 2, which 429'd repeated login attempts invisibly — raised 2026-10-23). Failed SMTP sends are still invisible to the client: GoTrue answers 200 anyway |
+| relay.ts (`infra/mail/relay.ts`) | HTTP→SMTP for the edge functions **and the `:465` GoTrue submission shim** | loopback HTTP with bearer-token auth; :465 implicit-TLS SMTP with `AUTH PLAIN` as `notify@juneau.love`; ≤10 recipients / 256 KB per part, multipart/alternative (text+html), RFC 2047 subjects, fixed From |
+| nginx (mail vhost) | TLS at `mail.juneau.love:443` | server blocks on the existing nginx (which fronts other sites on :80/:443); certbot webroot issues + auto-renews; the only public mail-adjacent HTTP surface |
+| GoTrue SMTP | Auth emails (confirmation, signup) | Supabase "custom SMTP" project setting → `mail.juneau.love:465` (the relay shim); `rate_limit_email_sent` is 30 msg/hour (the GoTrue default; it had been set to 2, which 429'd repeated login attempts invisibly — raised 2026-10-23). Failed SMTP sends are still invisible to the client: GoTrue answers 200 anyway (signup `POST /otp` is the exception — it 500s and rolls back; see bugs.md) |
 
 ## DNS (juneau.love)
 
@@ -88,12 +89,58 @@ command (see [project notes](/project.md), Deploy).
 
 - Edge function secrets: `MAIL_RELAY_URL` + `MAIL_RELAY_TOKEN`.
 - GoTrue custom SMTP (Management API `PATCH /projects/{ref}/config/auth`
-  or dashboard → Auth → SMTP): host `mail.juneau.love`, port 587,
-  user `notify@juneau.love`, password per above, sender
-  `notify@juneau.love`, sender name `juneau.love`, autoconfirm **off**,
-  external email **on**. The command is in `infra/mail/README.md`.
+  or dashboard → Auth → SMTP): host `mail.juneau.love`, port **465**
+  (the relay's GoTrue submission shim, below), user `notify@juneau.love`,
+  password per above, sender `notify@juneau.love`, sender name
+  `juneau.love`, autoconfirm **off**, external email **on**. The command
+  is in `infra/mail/README.md`. Port 587 (Maddy directly) is the
+  rollback path.
 - GoTrue email templates: two `mailer_templates_*_content` URL settings
   plus subjects — see [Email templates](#email-templates-gotrue) below.
+
+## GoTrue submission shim (relay `:465`, added 2026-10-24)
+
+GoTrue's auth emails are **re-sent by the relay in the relay's own
+message shape**: GoTrue dials `mail.juneau.love:465` (implicit TLS),
+authenticates as `notify@juneau.love` (`SMTP_SUBMIT_PASSWORD` in
+`/etc/mail-relay/env`), sends its message, and the relay hands it to
+Maddy `:25` through the same `sendMail()` the edge functions use.
+
+**Why** — umich.edu's gateway (Mimecast) intermittently `451`s GoTrue's
+native shape (single-part `text/html`, `Message-ID @<ref>.supabase.co`,
+residential IP) while accepting the relay shape: 1/6 vs 4/4 across three
+windows with the same recipient and identical content (A/B table in
+[bugs.md](/bugs.md)). Neither attribute is configurable in hosted
+GoTrue (its mailer pins `gomail v2`), so the shape is changed after GoTrue
+sends — by the relay.
+
+**Wire protocol** (verified against the exact gomail commit GoTrue pins,
+`gopkg.in/gomail.v2@v2.0.0-20160411212932-81ebce5c23df`): `NewDialer`
+sets `SSL: port == 465` → implicit TLS, server cert verified against
+`smtp_host` → `EHLO` → `AUTH PLAIN` (Go stdlib, inline response) →
+`MAIL/RCPT/DATA`. Hence the shim is a plain `Deno.listenTls` (no
+STARTTLS) serving a **staging copy** of the LE cert in
+`/etc/mail-relay/tls/` (the `mailrelay` user can't read
+`/etc/letsencrypt`); the certbot deploy hook
+`renewal-hooks/deploy/mail-relay.sh` re-copies and restarts `mail-relay`
+on renewal. Port 465 can't be swapped for an unprivileged one — gomail
+only uses implicit TLS when the port is exactly 465 — so the unit
+carries `AmbientCapabilities=CAP_NET_BIND_SERVICE` (465 < 1024; the
+service runs as unprivileged `mailrelay`). Diagnostic: a bare
+`PermissionDenied: ... (os error 13)` **without a file path** at startup
+means the privileged bind failed (missing capability), not a cert read
+problem (which names the file).
+
+**Failure semantics** — delivery failure → shim returns `451` → GoTrue
+500s the signup → the **whole signup rolls back** (no orphaned user row;
+verified in GoTrue v2.197.0) → the register page's 500-retry (4 attempts,
+10/30/60 s backoff) or a manual retry is a clean fresh attempt. Bad
+credentials → `535`, connection dropped.
+
+**Rollback** — `PATCH smtp_port: "587"` + project restart restores the
+pre-2026-10-24 direct-to-Maddy path (the `:587` listener stays up).
+
+**Deploy/runbook:** `infra/mail/README.md` sections 3, 6a, 6b.
 
 ## Email templates (GoTrue)
 
@@ -168,6 +215,15 @@ To rotate:
    GoTrue was stuck on a stale password the same day (captured with the
    sink). If the API won't take the write, set the password from the
    dashboard instead and include the symptom in the escalation.
+   **Observed 2026-10-25: the read-back now *includes* `smtp_pass` (a
+   64-hex string), but that value fails live AUTH against Maddy (535) —
+   the real password works (235). The read-back value is not
+   trustworthy; verify any candidate with a live STARTTLS + AUTH PLAIN
+   from outside the VPS before trusting it.
+6. Since 2026-10-24 the relay's `:465` shim authenticates the same user
+   against `SMTP_SUBMIT_PASSWORD` in `/etc/mail-relay/env` — put the same
+   plaintext there and `sudo systemctl restart mail-relay` (env is read
+   at process start; no hot reload).
 
 One valid hash per user: duplicate lines for the same user collapse
 (first line wins — observed 2026-10-23). Verify from **outside** the VPS,

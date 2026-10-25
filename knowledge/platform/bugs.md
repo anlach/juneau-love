@@ -2,7 +2,7 @@
 type: project-notes
 title: Bug list
 description: Running log of real bugs found in the hosted Supabase project, the mail stack, and the site — with root cause, fix, and status. Newest first.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:05:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T17:12:00Z }
 ---
 
 # Bug list
@@ -12,43 +12,6 @@ Statuses: **OPEN** (needs a fix), **FIXED** (shipped/verified), **WATCH**
 live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
-
-### Env-specific topology smuggled in as function secrets (`SITE_URL` → localhost, S3 env) (2026-10-24)
-The 2026-10-24 06:23Z secret batch copied local-stack values into the
-hosted project. `SITE_URL` held `http://localhost:3000` (the code default
-was already `https://juneau.love` — the secret overrides it), so every
-derived link pointed at the dev machine: the registration-approval deep
-links (`?approve=<id>` / `?reject=<id>` and the list link in the
-`notify-registration` alert) and the magic-link redirect target in
-`send-login-link` / `registration-decision`
-(`generateMagicLink(email, ${SITE_URL}/login)`). Observed: the approval
-links in the first real admin alert opened localhost and were unusable.
-The same batch also set `S3_ENDPOINT` / `S3_PATH_PREFIX` / `S3_REGION` —
-keys that exist only in the local `config.toml` — and re-stamped
-`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (secret values are unreadable;
-if those hold the local CLI defaults, hosted presigned asset URLs point at
-`http://127.0.0.1:54321` with the wrong keys). The Hippius keys in the dev
-shell are live-verified (2026-10-24, `supabase/tests/s3-presign.ts`
-round-trip) and available for re-setting if needed.
-- Root cause: environment-derived **non-secret** topology (site URL,
-  local-stack S3 settings) was overridable per environment via function
-  secrets, so a stale local write silently wins over the prod code default.
-- Fix (code, 2026-10-24): a `JL_ENV` function env (`dev` | `prod`; unset
-  or any non-`dev` value = prod) selects the topology in `_shared` —
-  `SITE_URL`, the S3 endpoint/path-prefix/region, and the dev S3
-  credentials are now per-environment constants; only real secrets (mail
-  relay, prod S3 credentials) stay in the function env. Local:
-  `config.toml` `[edge_runtime.secrets]` carries just `JL_ENV = "dev"`.
-- Fix (deploy, pending): unset the topology secrets on the hosted project
-  (`SITE_URL`, `S3_ENDPOINT`, `S3_PATH_PREFIX`, `S3_REGION`, `S3_BUCKET`)
-  and redeploy all five functions (all import `_shared`).
-- Verify: a fresh admin alert / approval email whose links open
-  `https://juneau.love`; hosted gallery image URLs pointing at
-  `s3.hippius.com` (if they point at 127.0.0.1, the S3 credential secrets
-  are the local defaults — re-set the Hippius keys).
-- Follow-up (owner request, still open): sweep the whole app for
-  dev/local values that leaked into prod — code defaults, email templates,
-  DNS (function secrets are covered above).
 
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
@@ -62,6 +25,70 @@ would break auth mail again.
   reverse). Candidate for a Supabase support ticket.
 
 ## FIXED
+
+### Orphaned `auth.users` row deadlocked register/sign-in (2026-10-25)
+Manual cleanup during the 2026-10-24 UMich debugging deleted the test
+`lacharit@umich.edu` guest's `public.users` row but left its
+`auth.users` row (created 2026-10-24 06:09 by the accepted signup,
+never email-confirmed). The register probe (`signInWithOtp` with
+`shouldCreateUser: false`) asks **GoTrue** (`auth.users`) → "An account
+with that email already exists — sign in"; `send-login-link` asks
+**`public.users`** via REST → `not_found` → "That email isn’t registered
+yet". Both messages are true at the same time — a deadlock with no
+UI path out of it.
+- Root cause: the half-delete. The `auth.users → public.users` cascade
+only runs when the auth row is removed; deleting the profile row alone
+orphans the auth account. The `on_auth_user_created` trigger keeps the
+pair together at signup, but nothing reconciles a later manual delete.
+- Fix: delete the orphaned `auth.users` row (Management API
+`DELETE /v1/projects/{ref}/auth/users/{id}`, or SQL
+`delete from auth.users where id = '…'`), then re-run registration
+fresh (which also became the first production test of the `:465` shim).
+- Lesson: to manually remove a guest, delete the **auth** row (the
+cascade cleans up the profile) — never the profile row alone.
+
+### Env-specific topology smuggled in as function secrets (`SITE_URL` → localhost, S3 env) (2026-10-24)
+The 2026-10-24 06:23Z secret batch copied local-stack values into the
+hosted project. `SITE_URL` held `http://localhost:3000` (the code default
+was already `https://juneau.love` — the secret overrides it), so every
+derived link pointed at the dev machine: the registration-approval deep
+links (`?approve=<id>` / `?reject=<id>` and the list link in the
+`notify-registration` alert) and the magic-link redirect target in
+`send-login-link` / `registration-decision`
+(`generateMagicLink(email, ${SITE_URL}/login)`). Observed: the approval
+links in the first real admin alert opened localhost and were unusable.
+The same batch also set `S3_ENDPOINT` / `S3_PATH_PREFIX` / `S3_REGION` —
+keys that exist only in the local `config.toml` — and re-stamped
+`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (secret values are unreadable).
+- Root cause: environment-derived **non-secret** topology (site URL,
+  local-stack S3 settings) was overridable per environment via function
+  secrets, so a stale local write silently wins over the prod code default.
+- Fix (code, 2026-10-24, commit 3dc6722): a `JL_ENV` function env
+  (`dev` | `prod`; unset or any non-`dev` value = prod) selects the
+  topology in `_shared` — `SITE_URL` and the S3 endpoint/path-prefix/
+  region are per-environment constants the stale secrets can no longer
+  touch; only real secrets (mail relay, S3 credentials, bucket name) stay
+  in the function env. Local: `config.toml` `[edge_runtime.secrets]`
+  carries just `JL_ENV = "dev"`.
+- Fix (deploy): all five functions redeployed 2026-10-24 14:34 UTC
+  (Management API `updated_at`), 19 min after the code commit — hosted
+  code is the fixed version, so the `SITE_URL`/`S3_ENDPOINT`/
+  `S3_PATH_PREFIX`/`S3_REGION` secrets are inert dead weight if never
+  unset.
+- Residual (cleanup only): unset the stale topology secrets on the hosted
+  project. `S3_BUCKET` is still read from env, but its local value equals
+  the prod default (`juneau-assets`).
+- Verify: a fresh admin alert / approval email whose links open
+  `https://juneau.love` (the 2026-10-24 registration retest covers this).
+  Separate live risk from the same batch: if the re-stamped
+  `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` hold the local CLI defaults,
+  hosted gallery presigned URLs sign with the wrong keys (endpoint is now
+  the Hippius constant) → 403. If a hosted gallery image URL 403s, re-set
+  the Hippius keys (live-verified in the dev shell 2026-10-24,
+  `supabase/tests/s3-presign.ts` round-trip).
+- Follow-up (owner request, still open): sweep the whole app for
+  dev/local values that leaked into prod — code defaults, email templates,
+  DNS (function secrets are covered above).
 
 ### Registration confirmation email is unbranded (2026-10-24)
 A guest's first email is GoTrue's default confirmation template — plain
@@ -111,6 +138,63 @@ once-per-registration admin alert were silently consumed by log-only sends.
 - Fix: set both secrets on the project (CLI `supabase secrets set`),
   06:23 UTC 2026-10-24; first real relay delivery verified 06:25:55 and
   admin sign-in via the site confirmed working.
+
+## WATCH
+
+### UMich intermittently 451s auth mail — "denied by local policy" (2026-10-24)
+Registration for a `umich.edu` address can fail with
+"Registration didn’t go through (Error sending confirmation email)": on the
+signup path, GoTrue's `POST /otp` returns the SMTP failure **synchronously**
+(`MagicLink` → `Signup` sends the confirmation email inside the user-creation
+transaction; a send failure 500s *and rolls the user row back*) — unlike the
+magiclink-to-existing-user path, which still 200s (the 2026-10-23
+invisible-failure mode).
+- Trace (Maddy journal): authenticated hand-off clean
+  (`username: notify@juneau.love`), `RCPT ok`, then
+  `DATA error 451 "Message Tempfailed: denied by local policy"` from
+  mx1/mx2.a.mail.umich.edu (Mimecast). The SMTP password is **not** involved —
+  gmail / proton.me / yopmail deliveries from the same Maddy were all
+  accepted, and umich itself accepted the same sender→recipient pair the
+  same morning (06:09, the DKIM-fix verification send).
+- Interleave: 10-23 23:03 451 → 10-24 06:09 accepted → 15:55 451 ×2 →
+  16:20 relay test to the same address **accepted** → 16:27 451 ×2 →
+  16:40 relay test carrying GoTrue's exact subject + rendered body
+  **accepted** — inside the very window GoTrue's own sends were 451'd.
+  Sender-side auth is intact (SPF, DKIM TXT vs on-disk key byte-for-byte,
+  DMARC, PTR all verified 2026-10-24); Maddy's queue stays empty (451 is
+  returned to GoTrue, never retried).
+- Message-shape effect: GoTrue-formatted mail (single-part `text/html`,
+  Message-ID `@<ref>.supabase.co` — `internal/mailer/mailmeclient` does
+  `gomail.NewMessage` + `SetBody("text/html", …)`, no plain part) went
+  1/6 to umich, while multipart text+html mail from the same IP/SPF/DKIM
+  went 2/2, both umich accepts inside the GoTrue-451 window. umich's
+  gateway scores GoTrue's message shape borderline for this
+  Choopa-residential IP and tempfails it intermittently; neither the MIME
+  shape nor the Message-ID domain is configurable in hosted GoTrue (its
+  mailer pins `gomail v2`), so the shape is changed **after** GoTrue sends
+  — by the relay's `:465` GoTrue submission shim (below).
+- Mitigation (deployed 2026-10-25; first production send pending): GoTrue now points
+  at the relay's `:465` shim (Supabase `smtp_port: "465"` set + project
+  restarted), which re-sends the mail through `sendMail()` in the
+  accepted shape (multipart, `Message-ID @juneau.love`, real text part).
+  Verified locally end-to-end against the exact gomail handshake (465
+  implicit TLS + `AUTH PLAIN`, per the pinned commit's `SSL: port == 465`)
+  before deploy: 250 path delivers the rewritten mail, a 451 from Maddy's
+  side comes back to GoTrue as 451 → 500 → clean rollback. Deploy notes:
+  the shim's bind of privileged 465 needs
+  `AmbientCapabilities=CAP_NET_BIND_SERVICE` on the unit (a bare
+  `PermissionDenied: … (os error 13)` without a file path at startup =
+  the bind, not the cert read). The register page's 500-retry (4
+  attempts, 10/30/60 s) is the backstop if a tempfail window still
+  outlasts it. Rollback: `smtp_port: "587"` + project restart. Design and
+  runbook: `knowledge/platform/mail.md` (shim section),
+  `infra/mail/README.md` §6a/6b.
+- If umich starts 451ing the **relay-shaped** mail too (check
+  `journalctl -u mail-relay` for `[submit] delivery … failed`),
+  sender reputation is the suspect — that is a hosting/IP problem, not a
+  mail-stack one.
+- Not confused with: the 2026-10-24 corrupt-DKIM incident (FIXED, same
+  451 signature — verify DNS first if it recurs).
 
 ### DKIM TXT published corrupt → umich 451 "denied by local policy" (2026-10-24)
 The published `mail._domainkey.juneau.love` contained stray spaces inside
