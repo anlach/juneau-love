@@ -53,6 +53,46 @@ test.describe('approved guest', () => {
 		await expect(page.getByText(/no photos yet/i)).toBeVisible();
 	});
 
+	test('approved guest can open the things to do page', async ({ page }) => {
+		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
+		await expect(page).toHaveURL('/');
+
+		// Signed-in nav offers the guide alongside Photos.
+		await page.getByRole('navigation').getByRole('link', { name: 'Things to Do' }).click();
+
+		await expect(page).toHaveURL('/things-to-do');
+		await expect(page.getByRole('heading', { name: /things to do in juneau/i })).toBeVisible();
+
+		// The guide content renders: a trail, a museum, and the tide chart link.
+		await expect(page.getByText('Nugget Falls Trail')).toBeVisible();
+		await expect(page.getByText('Sealaska Heritage Institute')).toBeVisible();
+		await expect(
+			page.getByRole('link', {
+				href: 'https://tidesandcurrents.noaa.gov/stationhome.html?id=9452210'
+			})
+		).toBeVisible();
+	});
+
+	test('things to do embeds the map and offers a download', async ({ page }) => {
+		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
+		await expect(page).toHaveURL('/');
+
+		await page.goto('/things-to-do');
+		await expect(page.getByRole('heading', { name: /things to do in juneau/i })).toBeVisible();
+
+		// The map is embedded as the static PDF, and the download link points
+		// at the same file with the download attribute set.
+		await expect(page.locator('iframe[src="/juneau-map.pdf"]')).toHaveCount(1);
+		const download = page.getByRole('link', { name: /download/i });
+		await expect(download).toHaveAttribute('href', '/juneau-map.pdf');
+		await expect(download).toHaveAttribute('download');
+
+		// The asset itself is served as a real PDF.
+		const res = await page.request.get('/juneau-map.pdf');
+		expect(res.status()).toBe(200);
+		expect(res.headers()['content-type']).toContain('application/pdf');
+	});
+
 	test('guest cannot open the registrations page', async ({ page }) => {
 		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
 		await expect(page).toHaveURL('/');
