@@ -18,6 +18,7 @@ the render mode of every route, and the decision rule is:
 | `/` | **prerendered** (`prerender = true` in `src/routes/+page.ts`) | The public invitation; the signed-in variants of it hydrate in place after the client-side auth check |
 | `/login`, `/register`, `/auth/confirm` | client (`ssr = false`) | Session-dependent (fragment session exchange, "already signed in" state) |
 | `/gallery` | client (`ssr = false`) | Gated on `status = 'approved'` |
+| `/things-to-do` | client (`ssr = false`) | Gated on `status = 'approved'` |
 | `/registrations` | client (`ssr = false`) | Gated on `registrations:read` |
 
 ## Mechanics

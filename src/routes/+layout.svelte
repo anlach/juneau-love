@@ -76,6 +76,7 @@
 		{:else if auth.kind === 'ready'}
 			{#if status === 'approved'}
 				<a href="/gallery">Photos</a>
+				<a href="/things-to-do">Things to Do</a>
 			{/if}
 			{#if hasPermission('registrations:read')}
 				<a href="/registrations">Registrations</a>
