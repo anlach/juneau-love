@@ -177,12 +177,20 @@ by project settings, not by site code:
   setting (2026-10-24 — [bug list](/bugs.md)). Reading the setting back
   is not a valid check that the template is live; verify with a real
   send.
-- **A *successful* fetch can still degenerate** (2026-10-25, raw email
-  verified): the GET returned HTTP 200 with the URL string itself as
-  the body, so GoTrue parsed the URL as a literal-text template and the
-  guest received an email whose entire content was the link to the
-  template file. The relay shim now catches that shape and fetches the
-  real document itself — see the shim section's template-URL fallback.
+- **A *successful* fetch can still degenerate** (2026-10-25, verified
+  twice). Mode 1 (raw email): the GET returned HTTP 200 with the URL
+  string itself as the body, so GoTrue parsed the URL as a literal-text
+  template and the guest received an email whose entire content was the
+  link to the template file; the relay shim catches that shape and
+  fetches the real document itself — see the shim section's template-URL
+  fallback. Mode 2 (relay journal 15:43, after three mode-1 sends the
+  same day): the GET returned an **empty** body, so the submitted
+  message had no body at all and the shim's parse failed ("no header/
+  body separator") → 451 → the whole signup rolled back. Both modes
+  come from Supabase's egress to the template host, not from our code
+  (plain `curl` from elsewhere gets the real file). While the hosted
+  template URL can't be trusted, keep the template settings empty —
+  GoTrue then uses its built-in default with no fetch at all.
 - The rendered body is sent as `text/html`, with no plain-text part.
 - Confirmation/magiclink template variables: `.ConfirmationURL` (the
   action link — both types use this name), `.Email`, `.Token`,
@@ -192,13 +200,35 @@ by project settings, not by site code:
 - The templates are repo files served by the site: `static/email/`
   (copied verbatim into the build). Their HTML comments must not
   contain `{{ }}` — template actions inside comments break the parse
-  and trip the silent fallback. Project settings (Management API,
-  read-back verified 2026-10-24): `mailer_templates_confirmation_content`
-  = `https://juneau.love/email/confirmation.html`,
+  and trip the silent fallback. To rebrand: re-PATCH
+  `mailer_templates_confirmation_content` =
+  `https://juneau.love/email/confirmation.html`,
   `mailer_templates_magic_link_content` =
   `https://juneau.love/email/magic-link.html`, subjects
   `mailer_subjects_confirmation` = "Confirm your juneau.love email",
-  `mailer_subjects_magic_link` = "Your juneau.love sign-in link".
+  `mailer_subjects_magic_link` = "Your juneau.love sign-in link" —
+  then **read the values back** (Management API drops writes silently)
+  and verify with a real send. As of 2026-10-25 the settings were reset
+  to empty (built-in defaults) for exactly the flaky-fetch reason above.
+- **Action links: the `/verify` hop.** GoTrue builds the action link as
+  `SiteURL + URLPaths.Confirmation` (default path `/verify`) with
+  `?token=…&type=…&redirect_to=…`. `site_url` must stay
+  `https://juneau.love` (the `redirect_to` rewrite —
+  [project notes](/project.md)), and the hosted Management API does not
+  expose `mailer_url_paths_*` at all (243-key schema, no such key; a
+  PATCH containing them returns 200 and drops them), so the link can't
+  be pointed at `supabase.co` by config. Instead the site serves a
+  client-only `/verify` route (`src/routes/verify/`) that passes the
+  query string straight through to
+  `https://<ref>.supabase.co/auth/v1/verify`; GoTrue confirms the email
+  (or creates the magic-link session) and 303s back to `redirect_to`
+  (the referrer — the register page) with the session in the URL
+  fragment. supabase-js's `detectSessionInUrl` installs it; a pending
+  signed-in user is routed to the awaiting-approval screen by the root
+  layout, and `/auth/confirm` handles the same fragment. Probe-verified
+  2026-10-25: bad token → 303 to `https://juneau.love/register` with an
+  error fragment, so the `redirect_to` value is accepted by GoTrue's
+  redirect validation.
 
 ## Local development
 

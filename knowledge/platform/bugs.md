@@ -13,6 +13,12 @@ live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
 
+### Email action links 404: GoTrue builds `SiteURL + /verify`, no such route (2026-10-25)
+The confirmation (and magic-link) action link is `https://juneau.love/verify?token=…&type=…&redirect_to=…` — GoTrue's default confirmation URL path resolved against `site_url`. The site had no `/verify` route, so clicking the link in a received email landed on the SPA's 404; with `mailer_autoconfirm=false` and sign-in disabled for unconfirmed emails, a guest who received the email could **never confirm and could never log in**. Discovered 2026-10-25 while fixing the template-URL bug, by tracing GoTrue v2.197.0's link construction (`emailParams.ConfirmationURL = externalURL.ResolveReference(getPath(...))`) and probing the live site.
+- The config-side fix is not available: `site_url` must stay `https://juneau.love` (the `redirect_to` rewrite — [project notes](/project.md)), and the hosted Management API's 243-key auth schema has no `mailer_url_paths_*` key (a PATCH containing them returns 200 and silently drops them — same failure class as the old `smtp_pass` drop).
+- Fix (committed, branch `relay-submit-crash`): a client-only `/verify` route that passes the query string through to `https://<ref>.supabase.co/auth/v1/verify`; GoTrue confirms the email / creates the magic-link session and 303s back to `redirect_to` with the session in the URL fragment, which supabase-js installs (probe-verified: bad token → 303 to `juneau.love/register` with an error fragment, so the `redirect_to` is accepted by GoTrue's redirect validation).
+- Status: code committed + built; pending Pages deploy (push to `main`) and a live email-click test.
+
 ### Registration email delivered as a link to the template file (2026-10-25)
 The 02:14 and 02:24 UTC confirmation emails (raw headers verified from the
 owner's inbox) had **both** the `text/plain` and `text/html` parts
@@ -36,7 +42,27 @@ domain/deploy edge — the site file re-deployed at 02:33:04 UTC, 9 min
   `http(s)` URL — and fetches the real document itself (10 s timeout,
   1 MB cap, mirroring GoTrue's limits) before re-sending; any fetch
   failure falls back to the body as given so the problem stays visible.
-  Covered by `infra/mail/test_relay_submit.py` §[4].
+  Covered by `infra/mail/test_relay_submit.py` §[4]. The relay's
+  template-URL resolution fired in production at 14:53/14:58 UTC on
+  2026-10-25 ("resolved template URL … (2541 bytes)") — the degenerate
+  fetch recurred after the fix, and the mitigation worked as designed.
+- **Second degenerate mode** (relay journal 15:43 UTC same day): the
+  fetch returned an **empty** body; the submitted message had no body
+  and the shim's parse failed ("no header/body separator") → 451 →
+  signup rolled back. Not catchable by the URL resolver (nothing to
+  resolve) — avoided entirely by the template-settings reset below.
+- **umich 451s** (14:53/14:58): the relay-reshaped branded emails were
+  temp-rejected by `mx1/mx2.a.mail.umich.edu` ("denied by local
+  policy") while the same shape was accepted at 02:14/02:24 (including
+  the 43-byte URL-body email) — consistent with the documented
+  intermittency; content (real branded HTML vs 43-byte body) is the
+  prime suspect.
+- **Decisive mitigation (applied 2026-10-25, read-back verified)**:
+  `mailer_templates_confirmation_content` and
+  `mailer_templates_magic_link_content` reset to **empty** so GoTrue
+  uses its built-in defaults with **no template fetch at all**; subjects
+  set to the defaults too. Rebrand only once the fetch flakiness is
+  understood (see [Mail](/mail.md) for the rebrand recipe).
 - Status: mitigation shipped with the crash fix (branch
   `relay-submit-crash`); pending production deploy + a live registration
   test to the owner's inbox.
