@@ -67,9 +67,9 @@ test.describe('approved guest', () => {
 		await expect(page.getByText('Nugget Falls Trail')).toBeVisible();
 		await expect(page.getByText('Sealaska Heritage Institute')).toBeVisible();
 		await expect(
-			page.getByRole('link', {
-				href: 'https://tidesandcurrents.noaa.gov/stationhome.html?id=9452210'
-			})
+			page.locator(
+				'a[href="https://tidesandcurrents.noaa.gov/stationhome.html?id=9452210"]'
+			)
 		).toBeVisible();
 	});
 
