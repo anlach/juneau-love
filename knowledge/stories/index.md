@@ -1,6 +1,7 @@
 # user-story
 
 * [Access by approval status](access-by-approval-status.md) - A signed-in user's screen is determined by their approval state — pending sees an awaiting screen, rejected sees a rejection screen, approved sees guest content (admins additionally the registrations page).
+* [Change display name](change-display-name.md) - A signed-in user changes the name the site shows for them from a menu-reached page that looks like the registration card; the save is a self-update of users.display_name (the only user-writable column), the header and the DB row follow, and an empty name is refused.
 * [Guest gallery](guest-gallery.md) - Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. No thumbnails, no delete in v1.
 * [Register as a guest](register-as-guest.md) - A guest registers with email and display name (no password); the registration starts in pending state, the guest confirms their email, and then it waits for an admin decision. The admins are alerted about the new registration by email (with approve/reject links) as soon as it is made.
 * [Review registrations (admin)](review-registrations.md) - The admin opens a registrations page listing every registration with its verification and approval state, and can approve (verified emails only) or reject each one; approving emails the guest their login link. Admins are alerted to each new registration by email with approve/reject deep links into this page.

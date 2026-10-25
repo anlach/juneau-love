@@ -7,6 +7,7 @@
 
 * [Current user state (own status + permissions)](current-user-state.md) - The self-query the layout runs after a session exists: the user's own users row (email, display name, approval status, confirmation and admin-notification stamps) with their roles nested in, from which permission names are derived; this state drives the nav, the approval gate, and the notify-registration fallback.
 * [List registrations (admin)](registration-list.md) - PostgREST read of all users rows that feeds the admin registrations table — display name, email, verified indicator, registration date, approval state, newest first.
+* [Update own display name](change-display-name.md) - The self-PATCH a signed-in user makes to their own users row to change their display name — the only column the guard trigger lets an authenticated user write; on success the client re-reads its own state so the header name follows.
 
 # auth-flow
 
