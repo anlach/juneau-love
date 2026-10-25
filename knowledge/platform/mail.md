@@ -135,7 +135,22 @@ problem (which names the file).
 500s the signup → the **whole signup rolls back** (no orphaned user row;
 verified in GoTrue v2.197.0) → the register page's 500-retry (4 attempts,
 10/30/60 s backoff) or a manual retry is a clean fresh attempt. Bad
-credentials → `535`, connection dropped.
+credentials → `535`, connection dropped. A session error must never take
+the process down: `conn.remoteAddr` is a null-prototype object in
+Deno 2.9.7 (no `toString`/`valueOf`), so it is only ever printed through
+`addrToString()`, and the `451` reply write is guarded (2026-10-25
+production crash — one bad AUTH killed the relay for ~5 s; see
+[bugs.md](/bugs.md)).
+
+**Template-URL fallback** — GoTrue's `mailer_templates_*_content`
+settings are URLs it GETs and parses as Go `html/template`; in
+production (2026-10-25) the fetch once came back with the URL string
+itself as the body, so the guest's email contained only the link to the
+template file. The shim detects that degenerate case — a rendered HTML
+body that is a bare `http(s)` URL — and fetches the real document itself
+(10 s timeout, 1 MB cap, mirroring GoTrue's), re-deriving the text part;
+any fetch failure falls back to the body as given. Covered by
+`infra/mail/test_relay_submit.py` §[4].
 
 **Rollback** — `PATCH smtp_port: "587"` + project restart restores the
 pre-2026-10-24 direct-to-Maddy path (the `:587` listener stays up).
@@ -162,6 +177,12 @@ by project settings, not by site code:
   setting (2026-10-24 — [bug list](/bugs.md)). Reading the setting back
   is not a valid check that the template is live; verify with a real
   send.
+- **A *successful* fetch can still degenerate** (2026-10-25, raw email
+  verified): the GET returned HTTP 200 with the URL string itself as
+  the body, so GoTrue parsed the URL as a literal-text template and the
+  guest received an email whose entire content was the link to the
+  template file. The relay shim now catches that shape and fetches the
+  real document itself — see the shim section's template-URL fallback.
 - The rendered body is sent as `text/html`, with no plain-text part.
 - Confirmation/magiclink template variables: `.ConfirmationURL` (the
   action link — both types use this name), `.Email`, `.Token`,

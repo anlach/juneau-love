@@ -517,6 +517,64 @@ function parseSubmission(raw: string): ParsedMail | { error: string } {
   return { subject, html, text };
 }
 
+// Defense-in-depth against GoTrue's template fetch. The configured
+// mailer_templates_*_content values are URLs that GoTrue GETs and parses
+// as Go html/template; in production (2026-10-25) the fetch came back with
+// the URL string itself as the body, so GoTrue rendered the URL as literal
+// text and the guest received an email whose entire content was
+// "https://juneau.love/email/confirmation.html". Detect that degenerate
+// case and fetch the real document ourselves. Any failure falls back to
+// the body as given, so a problem stays visible instead of vanishing.
+const BARE_URL_RE = /^https?:\/\/[^\s]+$/i;
+const TEMPLATE_FETCH_TIMEOUT_MS = 10_000; // matches GoTrue's fetch timeout
+const MAX_TEMPLATE_BYTES = 1_000_000; // matches GoTrue's TemplateMaxSize
+
+async function resolveTemplateUrl(html: string): Promise<string> {
+  const trimmed = html.trim();
+  if (!BARE_URL_RE.test(trimmed)) return html;
+  try {
+    const res = await withTimeout(TEMPLATE_FETCH_TIMEOUT_MS, () => fetch(trimmed));
+    if (!res.ok) {
+      console.warn(`[submit] template URL ${trimmed} -> HTTP ${res.status}; sending body as-is`);
+      return html;
+    }
+    const body = await res.text();
+    if (!body.trim() || body.length > MAX_TEMPLATE_BYTES) {
+      console.warn(`[submit] template URL ${trimmed} returned an unusable body; sending as-is`);
+      return html;
+    }
+    console.log(`[submit] resolved template URL ${trimmed} (${body.length} bytes)`);
+    return body;
+  } catch (err) {
+    console.warn(`[submit] template URL fetch failed for ${trimmed}: ${errToString(err)}; sending body as-is`);
+    return html;
+  }
+}
+
+// Deno's conn.remoteAddr is a null-prototype object ({hostname, port,
+// transport} with no toString/valueOf), so interpolating it into a string
+// throws "Cannot convert object to primitive value" — which, inside an
+// error handler, takes the whole process down (2026-10-25 production
+// crash). Always go through this helper when printing addresses.
+function addrToString(addr: unknown): string {
+  if (typeof addr === "string") return addr;
+  const a = addr as { hostname?: string; port?: number } | null;
+  if (a && typeof a.hostname === "string" && a.hostname) {
+    return typeof a.port === "number" ? `${a.hostname}:${a.port}` : a.hostname;
+  }
+  return "unknown";
+}
+
+// Same failure class: never interpolate a raw unknown into a log line.
+function errToString(err: unknown): string {
+  if (err instanceof Error) return err.stack ?? err.message;
+  try {
+    return JSON.stringify(err) ?? "undefined";
+  } catch {
+    return "<unprintable error>";
+  }
+}
+
 async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
   const s: SubmitSession = {
     lines: new Lines(conn.readable),
@@ -575,7 +633,7 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
             }
             if (!ok) {
               await reply("535 5.7.8 Invalid credentials");
-              console.log(`[submit] bad credentials from ${conn.remoteAddr}`);
+              console.log(`[submit] bad credentials from ${addrToString(conn.remoteAddr)}`);
               return;
             }
             s.authed = true;
@@ -636,6 +694,13 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
             try {
               const parsed = parseSubmission(bodyLines.join("\r\n"));
               if ("error" in parsed) throw new Error(parsed.error);
+              const resolved = await resolveTemplateUrl(parsed.html);
+              if (resolved !== parsed.html) {
+                parsed.html = resolved;
+                // The text part was derived from the bare-URL body; re-derive
+                // it from the real document.
+                parsed.text = htmlToText(resolved) || "juneau.love — please open the HTML version of this message.";
+              }
               await sendMail({ to: s.rcpts, subject: parsed.subject, html: parsed.html, text: parsed.text });
               console.log(`[submit] delivered rcpt=${s.rcpts.join(",")} subject=${JSON.stringify(parsed.subject)}`);
               await reply("250 2.0.0 OK");
@@ -643,8 +708,12 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
               // Transient (recipient gateway 451 etc.) → 451: GoTrue 500s
               // the signup and rolls the user row back, so the guest's
               // retry is a clean fresh attempt.
-              console.error(`[submit] delivery to ${s.rcpts.join(",")} failed: ${err}`);
-              await reply("451 4.3.0 Temporarily rejected — please try again later");
+              console.error(`[submit] delivery to ${s.rcpts.join(",")} failed: ${errToString(err)}`);
+              try {
+                await reply("451 4.3.0 Temporarily rejected — please try again later");
+              } catch {
+                // Client already gone; nobody left to tell.
+              }
             }
             s.rcpts = [];
             break;
@@ -658,7 +727,7 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
       }
     });
   } catch (err) {
-    console.error(`[submit] session error (${conn.remoteAddr}): ${err}`);
+    console.error(`[submit] session error (${addrToString(conn.remoteAddr)}): ${errToString(err)}`);
   } finally {
     try {
       conn.close();

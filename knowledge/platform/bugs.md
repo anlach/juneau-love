@@ -13,6 +13,34 @@ live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
 
+### Registration email delivered as a link to the template file (2026-10-25)
+The 02:14 and 02:24 UTC confirmation emails (raw headers verified from the
+owner's inbox) had **both** the `text/plain` and `text/html` parts
+containing only the string
+`https://juneau.love/email/confirmation.html` (43 bytes, no newline) —
+GoTrue rendered the template *URL* as literal text. The subject was the
+custom branded one, so GoTrue's `loadEntry` "succeeded": its
+`loadEntryBody` `fetch()` of the configured URL returned HTTP 200 with
+the URL string itself as the body, and `html/template` parsed that as a
+literal-text template. The fetched result was cached (10 min max age),
+which is why both sends in the window carried the same broken body.
+- The live URL now (and at every subsequent check) serves the real 2563-
+  byte template from GitHub Pages, and every Pages deploy in the window
+  contained the full file in-tree — the transient 200-with-URL-body is
+  not reproducible from the ground, so the GoTrue/fetch-side root cause
+  stays unexplained (candidate: transient behavior at the Pages
+domain/deploy edge — the site file re-deployed at 02:33:04 UTC, 9 min
+  after the last broken send).
+- Mitigation (defense in depth, on the side we control): the relay shim
+  now detects the degenerate case — rendered HTML body that is a bare
+  `http(s)` URL — and fetches the real document itself (10 s timeout,
+  1 MB cap, mirroring GoTrue's limits) before re-sending; any fetch
+  failure falls back to the body as given so the problem stays visible.
+  Covered by `infra/mail/test_relay_submit.py` §[4].
+- Status: mitigation shipped with the crash fix (branch
+  `relay-submit-crash`); pending production deploy + a live registration
+  test to the owner's inbox.
+
 ### Mail relay process crashes on any submit-session error (2026-10-25)
 The relay's `:465` GoTrue submission handler takes the whole process down
 (HTTP relay + every edge-function mail send included) whenever a session
@@ -32,8 +60,14 @@ nothing).
   Secondary: the inner catch's `await reply("451 …")` is unguarded, so
   a reply write to a vanished client (RST/timeout) propagates to the
   outer catch and hits the same landmine.
+- Fix: `addrToString()` (property-based, never interpolates the raw
+  object) for all address logging; `errToString()` for error values;
+  the inner `451` reply is wrapped so a vanished client cannot escape
+  into the outer catch.
 - Repro: `infra/mail/test_relay_submit.py` (spawns the real `relay.ts`
-  against a local sink; bad-AUTH session kills the process).
+  against a local sink; pre-fix, the bad-AUTH session kills the process
+  with the exact production stack trace at `relay.ts:661:51`; post-fix,
+  all 28 checks pass including post-crash-trigger recovery).
 
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
