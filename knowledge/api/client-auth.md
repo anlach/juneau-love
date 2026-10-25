@@ -66,13 +66,20 @@ createClient(url, anonKey, {
   on by default in GoTrue — there is no dashboard toggle to check;
   [project notes](../platform/project.md).)
 - Email confirmation is **enabled** (project setting) → GoTrue emails a
-  "confirm your email" link — branded, because the site serves GoTrue's
-  email templates (GoTrue fetches them by URL —
-  [Mail](../platform/mail.md), Email templates) — sent via the project's
-  SMTP. **No session is created yet**; the FE shows
-  a session-independent "check your email to confirm your address"
-  screen. (Locally, autoconfirm is on, so the account starts confirmed
-  and the email is already a session-granting magiclink — [project
+  "confirm your email" link — sent via the project's SMTP. The link is
+  `SiteURL + /verify?token=…&type=…&redirect_to=…` (GoTrue's default
+  URL path, which the hosted Management API can't override — no
+  `mailer_url_paths_*` keys in its schema); the site's client-only
+  `/verify` route hops it to `https://<ref>.supabase.co/auth/v1/verify`,
+  which confirms the email and 303s back to `redirect_to` with the
+  session in the URL fragment — installed by
+  `detectSessionInUrl`, then routed (pending user → awaiting-approval
+  screen). Before 2026-10-25 the hop route didn't exist and the link
+  404'd ([bug list](../platform/bugs.md)). **No session is created
+  yet** at send time; the FE shows a session-independent "check your
+  email to confirm your address" screen. (Locally, autoconfirm is on,
+  so the account starts confirmed and the email is already a
+  session-granting magiclink — [project
   notes](../platform/project.md).)
 - Backend side effect: the `auth.users` trigger creates the
   [users](../db/users.md) row in `pending`, unconfirmed.

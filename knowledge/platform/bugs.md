@@ -13,6 +13,88 @@ live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
 ## OPEN
 
+### Email action links 404: GoTrue builds `SiteURL + /verify`, no such route (2026-10-25)
+The confirmation (and magic-link) action link is `https://juneau.love/verify?token=…&type=…&redirect_to=…` — GoTrue's default confirmation URL path resolved against `site_url`. The site had no `/verify` route, so clicking the link in a received email landed on the SPA's 404; with `mailer_autoconfirm=false` and sign-in disabled for unconfirmed emails, a guest who received the email could **never confirm and could never log in**. Discovered 2026-10-25 while fixing the template-URL bug, by tracing GoTrue v2.197.0's link construction (`emailParams.ConfirmationURL = externalURL.ResolveReference(getPath(...))`) and probing the live site.
+- The config-side fix is not available: `site_url` must stay `https://juneau.love` (the `redirect_to` rewrite — [project notes](/project.md)), and the hosted Management API's 243-key auth schema has no `mailer_url_paths_*` key (a PATCH containing them returns 200 and silently drops them — same failure class as the old `smtp_pass` drop).
+- Fix (committed, branch `relay-submit-crash`): a client-only `/verify` route that passes the query string through to `https://<ref>.supabase.co/auth/v1/verify`; GoTrue confirms the email / creates the magic-link session and 303s back to `redirect_to` with the session in the URL fragment, which supabase-js installs (probe-verified: bad token → 303 to `juneau.love/register` with an error fragment, so the `redirect_to` is accepted by GoTrue's redirect validation).
+- Status: code committed + built; pending Pages deploy (push to `main`) and a live email-click test.
+
+### Registration email delivered as a link to the template file (2026-10-25)
+The 02:14 and 02:24 UTC confirmation emails (raw headers verified from the
+owner's inbox) had **both** the `text/plain` and `text/html` parts
+containing only the string
+`https://juneau.love/email/confirmation.html` (43 bytes, no newline) —
+GoTrue rendered the template *URL* as literal text. The subject was the
+custom branded one, so GoTrue's `loadEntry` "succeeded": its
+`loadEntryBody` `fetch()` of the configured URL returned HTTP 200 with
+the URL string itself as the body, and `html/template` parsed that as a
+literal-text template. The fetched result was cached (10 min max age),
+which is why both sends in the window carried the same broken body.
+- The live URL now (and at every subsequent check) serves the real 2563-
+  byte template from GitHub Pages, and every Pages deploy in the window
+  contained the full file in-tree — the transient 200-with-URL-body is
+  not reproducible from the ground, so the GoTrue/fetch-side root cause
+  stays unexplained (candidate: transient behavior at the Pages
+domain/deploy edge — the site file re-deployed at 02:33:04 UTC, 9 min
+  after the last broken send).
+- Mitigation (defense in depth, on the side we control): the relay shim
+  now detects the degenerate case — rendered HTML body that is a bare
+  `http(s)` URL — and fetches the real document itself (10 s timeout,
+  1 MB cap, mirroring GoTrue's limits) before re-sending; any fetch
+  failure falls back to the body as given so the problem stays visible.
+  Covered by `infra/mail/test_relay_submit.py` §[4]. The relay's
+  template-URL resolution fired in production at 14:53/14:58 UTC on
+  2026-10-25 ("resolved template URL … (2541 bytes)") — the degenerate
+  fetch recurred after the fix, and the mitigation worked as designed.
+- **Second degenerate mode** (relay journal 15:43 UTC same day): the
+  fetch returned an **empty** body; the submitted message had no body
+  and the shim's parse failed ("no header/body separator") → 451 →
+  signup rolled back. Not catchable by the URL resolver (nothing to
+  resolve) — avoided entirely by the template-settings reset below.
+- **umich 451s** (14:53/14:58): the relay-reshaped branded emails were
+  temp-rejected by `mx1/mx2.a.mail.umich.edu` ("denied by local
+  policy") while the same shape was accepted at 02:14/02:24 (including
+  the 43-byte URL-body email) — consistent with the documented
+  intermittency; content (real branded HTML vs 43-byte body) is the
+  prime suspect.
+- **Decisive mitigation (applied 2026-10-25, read-back verified)**:
+  `mailer_templates_confirmation_content` and
+  `mailer_templates_magic_link_content` reset to **empty** so GoTrue
+  uses its built-in defaults with **no template fetch at all**; subjects
+  set to the defaults too. Rebrand only once the fetch flakiness is
+  understood (see [Mail](/mail.md) for the rebrand recipe).
+- Status: mitigation shipped with the crash fix (branch
+  `relay-submit-crash`); pending production deploy + a live registration
+  test to the owner's inbox.
+
+### Mail relay process crashes on any submit-session error (2026-10-25)
+The relay's `:465` GoTrue submission handler takes the whole process down
+(HTTP relay + every edge-function mail send included) whenever a session
+errors. Observed in production 2026-10-25 02:49:32 UTC:
+`Uncaught (in promise) TypeError: Cannot convert object to primitive
+value` at `handleSubmitConn`'s error handler, relay down ~5 s (systemd
+restart), in the middle of the owner's registration attempts (the 02:14
+and 02:24 UTC confirmations delivered fine; the 02:49 session produced
+nothing).
+- Root cause: in Deno 2.9.7 `conn.remoteAddr` is a **null-prototype
+  object** (no `toString`/`valueOf`), so the `${conn.remoteAddr}`
+  interpolation in the error path throws the TypeError *while handling
+  the original error* → unhandled rejection → process exit. Two sites:
+  the outer catch (`session error (${conn.remoteAddr})`) and the
+  bad-credentials log. A single `AUTH PLAIN` with wrong credentials
+  crashes the relay — an internet scanner can kill the mail path.
+  Secondary: the inner catch's `await reply("451 …")` is unguarded, so
+  a reply write to a vanished client (RST/timeout) propagates to the
+  outer catch and hits the same landmine.
+- Fix: `addrToString()` (property-based, never interpolates the raw
+  object) for all address logging; `errToString()` for error values;
+  the inner `451` reply is wrapped so a vanished client cannot escape
+  into the outer catch.
+- Repro: `infra/mail/test_relay_submit.py` (spawns the real `relay.ts`
+  against a local sink; pre-fix, the bad-AUTH session kills the process
+  with the exact production stack trace at `relay.ts:661:51`; post-fix,
+  all 28 checks pass including post-crash-trigger recovery).
+
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
 `smtp_pass` in the body, but read-back shows the old value; every other
