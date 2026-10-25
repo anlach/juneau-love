@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { type AuthError } from '@supabase/supabase-js';
 	import { supabase } from '#lib/supabase';
 	import { auth } from '#lib/session.svelte.ts';
 
@@ -8,11 +9,25 @@
 	let formError = $state<string | null>(null);
 	let registered = $state(false);
 	let registeredEmail = $state('');
+	// 1-based while the signup call (incl. retries) is in flight, else 0.
+	let attempt = $state(0);
 
 	// Safe view over the nullable profile (TS can't narrow from `auth.kind`).
 	const profile = $derived(auth.profile);
 
 	const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+	// The real signup call can fail with a 500 when GoTrue's confirmation
+	// email is temp-rejected at the *recipient's* gateway (observed:
+	// umich.edu's MX 451s "denied by local policy" intermittently while
+	// multipart mail from the same IP is accepted — knowledge/platform/
+	// bugs.md). Such a failure rolls the whole signup back (GoTrue commits
+	// user + email in one transaction), so retrying is a clean fresh
+	// attempt; a few tries with backoff ride out the gateway's temp window.
+	const SIGNUP_ATTEMPTS = 4;
+	const SIGNUP_RETRY_DELAYS_MS = [10_000, 30_000, 60_000];
+
+	const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 	async function submit() {
 		if (busy) return;
@@ -56,17 +71,31 @@
 				'An account with that email already exists — sign in instead, and we’ll sort it out from there.';
 			return;
 		}
-		const { error } = await supabase.auth.signInWithOtp({
-			email: trimmedEmail,
-			options: {
-				data: { display_name: trimmedName },
-				// origin-derived: juneau.love in prod, http://localhost:3000 in dev
-				emailRedirectTo: window.location.origin + '/auth/confirm'
-			}
-		});
+		let signUpError: AuthError | null = null;
+		for (let n = 1; n <= SIGNUP_ATTEMPTS; n++) {
+			attempt = n;
+			const { error } = await supabase.auth.signInWithOtp({
+				email: trimmedEmail,
+				options: {
+					data: { display_name: trimmedName },
+					// origin-derived: juneau.love in prod, http://localhost:3000 in dev
+					emailRedirectTo: window.location.origin + '/auth/confirm'
+				}
+			});
+			signUpError = error;
+			// Only a server-side 500 (e.g. the confirmation email being
+			// temp-rejected) is worth retrying now; 4xx (rate limit, bad
+			// input) won't heal on an immediate retry.
+			if (!error || error.status !== 500 || n === SIGNUP_ATTEMPTS) break;
+			await delay(SIGNUP_RETRY_DELAYS_MS[n - 1]);
+		}
 		busy = false;
-		if (error) {
-			formError = `Registration didn’t go through (${error.message}). Please try again.`;
+		attempt = 0;
+		if (signUpError) {
+			formError =
+				signUpError.status === 500
+					? 'We couldn’t send the confirmation email just now — please try again in a few minutes.'
+					: `Registration didn’t go through (${signUpError.message}). Please try again.`;
 			return;
 		}
 		// Alert the admins a registration is waiting. Best effort and never
@@ -151,7 +180,11 @@
 			{/if}
 			<div class="spread">
 				<button class="btn" type="submit" disabled={busy}>
-					{busy ? 'Registering…' : 'Request access'}
+					{#if busy && attempt > 1}
+						Registering… (attempt {attempt} of {SIGNUP_ATTEMPTS})
+					{:else}
+						{busy ? 'Registering…' : 'Request access'}
+					{/if}
 				</button>
 			</div>
 		</form>

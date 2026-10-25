@@ -34,3 +34,7 @@ vite.config.ts.timestamp-*
 # Playwright
 test-results/
 playwright-report/
+
+# Local relay smoke-test artifacts
+infra/mail/relay.log
+*.pid
