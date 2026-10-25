@@ -1,4 +1,5 @@
-// relay — HTTP -> SMTP relay for juneau.love's Supabase edge functions.
+// relay — HTTP -> SMTP relay for juneau.love's Supabase edge functions,
+// plus an SMTP submission listener (port 465) that front-ends GoTrue.
 //
 // The edge functions cannot open raw TCP (the edge runtime denies
 // Deno.connect — its user worker's net permission scope is empty), so every
@@ -8,14 +9,19 @@
 //              --loopback--> this relay --SMTP--> Maddy (127.0.0.1:25)
 //              --direct MX delivery--> internet
 //
+// GoTrue's auth emails take the same path, one hop longer: GoTrue
+// (Supabase custom SMTP) submits to this process's :465 listener, which
+// re-sends the mail through the same sendMail() as everything else — see
+// the "GoTrue submission shim" section below and knowledge/platform/
+// bugs.md (why: umich.edu's gateway 451s GoTrue's native message shape but
+// accepts this one).
+//
 // Maddy signs with DKIM; SPF/DMARC come from DNS (see README.md here and
-// knowledge/platform/mail.md in the repo). GoTrue's own auth emails do NOT
-// use this relay — they connect to Maddy's :587 submission port directly
-// (Supabase custom SMTP).
+// knowledge/platform/mail.md in the repo).
 //
 // Zero dependencies. Run with plain Deno:
 //
-//   deno run --allow-net --allow-env relay.ts
+//   deno run --allow-net --allow-env --allow-read=/etc/mail-relay/tls relay.ts
 //
 // Env (see /etc/mail-relay/env on the VPS):
 //   RELAY_LISTEN   default 127.0.0.1:8080  (loopback only — Caddy fronts it)
@@ -23,6 +29,14 @@
 //   RELAY_HELO     default mail.juneau.love
 //   RELAY_FROM     default "juneau.love <notify@juneau.love>"
 //   MAIL_RELAY_TOKEN  required — the shared bearer token the functions send
+//   SMTP_SUBMIT_LISTEN  default 0.0.0.0:465 (GoTrue's submission endpoint)
+//   SMTP_SUBMIT_CERT/KEY  default /etc/mail-relay/tls/{fullchain,privkey}.pem
+//     (staging copies of the Let's Encrypt cert — the mailrelay user cannot
+//     read /etc/letsencrypt; the certbot deploy hook refreshes + restarts)
+//   SMTP_SUBMIT_USER  default the RELAY_FROM address (notify@juneau.love)
+//   SMTP_SUBMIT_PASSWORD  the SMTP password GoTrue authenticates with
+//     (same value as Maddy's /etc/maddy/smtp_passwd). If unset, the submit
+//     listener is disabled (HTTP relay still runs — local dev).
 //
 // Design: knowledge/platform/mail.md (in the juneau-love repo)
 
@@ -46,6 +60,14 @@ const FROM_ADDRESS = (FROM.includes("<") ? FROM.match(/<([^>]+)>/)?.[1] : FROM)?
 if (!EMAIL_RE.test(FROM_ADDRESS)) {
   throw new Error(`RELAY_FROM does not contain a valid address: ${FROM}`);
 }
+
+// GoTrue submission shim (see header comment).
+const SUBMIT_LISTEN = Deno.env.get("SMTP_SUBMIT_LISTEN") ?? "0.0.0.0:465";
+const SUBMIT_CERT = Deno.env.get("SMTP_SUBMIT_CERT") ?? "/etc/mail-relay/tls/fullchain.pem";
+const SUBMIT_KEY = Deno.env.get("SMTP_SUBMIT_KEY") ?? "/etc/mail-relay/tls/privkey.pem";
+// The account GoTrue must authenticate as: Supabase's `smtp_user`.
+const SUBMIT_USER = Deno.env.get("SMTP_SUBMIT_USER") ?? FROM_ADDRESS;
+const SUBMIT_PASSWORD = Deno.env.get("SMTP_SUBMIT_PASSWORD") ?? "";
 
 // ---------------------------------------------------------------------------
 // HTTP layer
@@ -316,3 +338,355 @@ Deno.serve({ hostname: listenHost, port: listenPort }, async (req) => {
 });
 
 console.log(`[relay] listening on ${LISTEN}, handing off to ${SMTP_TARGET} as ${FROM_ADDRESS}`);
+
+// ---------------------------------------------------------------------------
+// GoTrue submission shim (port 465)
+// ---------------------------------------------------------------------------
+//
+// Why: umich.edu's gateway intermittently 451s GoTrue's native message
+// shape (single-part text/html, Message-ID @<ref>.supabase.co —
+// internal/mailer/mailmeclient + the pinned gomail) while accepting the
+// relay's multipart shape (Message-ID @juneau.love): 1/6 vs 4/4 across
+// three rejecting windows on 2026-10-24 (knowledge/platform/bugs.md).
+// Neither attribute is configurable in hosted GoTrue, so GoTrue now
+// submits to THIS listener and the mail goes out through sendMail() above
+// — the exact shape that is accepted. GoTrue's 500-on-send-failure
+// semantics are preserved: a delivery failure returns 451 here, GoTrue
+// 500s the signup, and the whole signup (user row included) rolls back.
+//
+// Wire protocol (verified 2026-10-24 against the exact pinned gomail
+// commit, v2.0.0-20160411212932-81ebce5c23df, smtp.go):
+//   NewDialer(host, 465, user, pass) → `SSL: port == 465` → implicit TLS
+//   with the server cert verified against smtp_host (mail.juneau.love),
+//   then EHLO + AUTH PLAIN (Go stdlib smtp.PlainAuth, inline initial
+//   response). So this is a plain TLS listener — no STARTTLS to offer.
+
+interface SubmitSession {
+  lines: Lines;
+  w: WritableStreamDefaultWriter<Uint8Array>;
+  authed: boolean;
+  rcpts: string[];
+}
+
+function constantTimeEq(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a);
+  const eb = new TextEncoder().encode(b);
+  if (ea.length !== eb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ea.length; i++) diff |= ea[i] ^ eb[i];
+  return diff === 0;
+}
+
+function decodeB64(s: string): string {
+  const bin = atob(s.replace(/\s/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+
+/** Quoted-printable: `=XX` escapes, `=CRLF` soft breaks, bare CR stripped. */
+function decodeQP(input: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    if (c === "=" && i + 2 < input.length) {
+      const hex = input.slice(i + 1, i + 3);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+        bytes.push(parseInt(hex, 16));
+        i += 2;
+        continue;
+      }
+      if (input[i + 1] === "\r" && input[i + 2] === "\n") {
+        i += 2;
+        continue;
+      }
+    }
+    if (c === "\r") continue;
+    bytes.push(c.charCodeAt(0) & 0x7f);
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+function decodePart(body: string, cte: string): string {
+  if (cte === "base64") return decodeB64(body);
+  if (cte === "quoted-printable") return decodeQP(body);
+  return new TextDecoder().decode(new TextEncoder().encode(body));
+}
+
+/** RFC 2047 encoded-words (=?charset?B|Q?data?=), incl. adjacent runs. */
+function decodeRfc2047(s: string): string {
+  return s
+    .replace(/\?=(?=\s+=\?)/g, "?=") // whitespace between adjacent encoded words is discarded
+    .replace(/=\?([^?\s]+)\?([BbQq])\?([^?]*)\?=/g, (_m, _cs, enc, data) =>
+      enc.toUpperCase() === "B" ? decodeB64(data) : decodeQP(data.replace(/_/g, " "))
+    );
+}
+
+function splitMultipart(body: string, boundary: string): string[] {
+  const parts: string[] = [];
+  const re = new RegExp(`^--${boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \t]*(?:\r\n|\n)`, "gm");
+  const marks: { start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) marks.push({ start: m.index, end: m.index + m[0].length });
+  for (let i = 0; i < marks.length; i++) {
+    const stop = i + 1 < marks.length ? marks[i + 1].start : body.lastIndexOf(`--${boundary}--`);
+    if (stop === -1 || stop <= marks[i].end) continue;
+    parts.push(body.slice(marks[i].end, stop));
+  }
+  return parts;
+}
+
+/**
+ * GoTrue sends no plain-text part (single text/html). Produce one: strip
+ * the markup, keep links inline as "text (url)", decode entities. A
+ * stripped text part is what umich's gateway sees in the accepted shape;
+ * (even text==html has been accepted — 2026-10-24 16:40/19:04 tests.)
+ */
+function htmlToText(html: string): string {
+  let t = html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<head\b[^>]*>[\s\S]*?<\/head>/i, " ")
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href, inner) =>
+      ` ${inner.trim()} (${href}) `)
+    .replace(/<\/?(p|div|h[1-6]|li|tr|table|br)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  t = t
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n)));
+  t = t.replace(/\s*\n\s*/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
+  return t;
+}
+
+interface ParsedMail {
+  subject: string;
+  html: string;
+  text: string;
+}
+
+function parseSubmission(raw: string): ParsedMail | { error: string } {
+  const headerEnd = raw.indexOf("\r\n\r\n");
+  if (headerEnd === -1) return { error: "no header/body separator" };
+  const headers: Record<string, string> = {};
+  let lastKey: string | null = null;
+  for (const line of raw.slice(0, headerEnd).split("\r\n")) {
+    if (line.length === 0) continue;
+    if (/^[ \t]/.test(line) && lastKey) {
+      headers[lastKey] += ` ${line.trim()}`; // folded header
+    } else {
+      const idx = line.indexOf(":");
+      if (idx > 0) {
+        lastKey = line.slice(0, idx).trim().toLowerCase();
+        headers[lastKey] = line.slice(idx + 1).trim();
+      }
+    }
+  }
+  const body = raw.slice(headerEnd + 4);
+  const contentType = headers["content-type"] ?? "";
+  const subject = decodeRfc2047(headers["subject"] ?? "").trim();
+  if (!subject) return { error: "no subject" };
+
+  let html = "";
+  let text = "";
+  if (/^multipart\//i.test(contentType)) {
+    const bm = /boundary=["']?([^"';\r\n]+)/i.exec(contentType);
+    if (!bm) return { error: "multipart without boundary" };
+    for (const part of splitMultipart(body, bm[1])) {
+      const pe = part.indexOf("\r\n\r\n");
+      if (pe === -1) continue;
+      const pHeaders = part.slice(0, pe);
+      const pBody = part.slice(pe + 4).replace(/\r?\n$/, "");
+      const pCT = /content-type:[ \t]*([^;\r\n]+)/i.exec(pHeaders)?.[1]?.trim() ?? "";
+      const pCTE = (/content-transfer-encoding:[ \t]*(\w+)/i.exec(pHeaders)?.[1] ?? "7bit").toLowerCase();
+      if (pCT.startsWith("text/html")) html = decodePart(pBody, pCTE);
+      else if (pCT.startsWith("text/plain")) text = decodePart(pBody, pCTE);
+    }
+  } else if (contentType.startsWith("text/html")) {
+    html = decodePart(body, (headers["content-transfer-encoding"] ?? "7bit").toLowerCase());
+  } else if (contentType.startsWith("text/plain")) {
+    text = decodePart(body, (headers["content-transfer-encoding"] ?? "7bit").toLowerCase());
+    html = text;
+  } else {
+    return { error: `unsupported content-type: ${contentType}` };
+  }
+  if (!html) return { error: "no usable body part" };
+  if (!text.trim()) text = htmlToText(html) || "juneau.love — please open the HTML version of this message.";
+  return { subject, html, text };
+}
+
+async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
+  const s: SubmitSession = {
+    lines: new Lines(conn.readable),
+    w: conn.writable.getWriter(),
+    authed: false,
+    rcpts: [],
+  };
+  const reply = async (line: string) => {
+    await s.w.write(new TextEncoder().encode(line + "\r\n"));
+  };
+  try {
+    await withTimeout(60_000, async () => {
+      await reply("220 mail.juneau.love ESMTP");
+      for (;;) {
+        const line = await s.lines.next();
+        if (line === null) return;
+        if (line.length === 0) continue;
+        const cmd = line.slice(0, 4).toUpperCase();
+        switch (cmd) {
+          case "EHLO":
+            await reply("250-mail.juneau.love");
+            await reply("250-AUTH PLAIN");
+            await reply("250 8BITMIME");
+            break;
+          case "HELO":
+            await reply("250 mail.juneau.love");
+            break;
+          case "NOOP":
+            await reply("250 2.0.0 OK");
+            break;
+          case "RSET":
+            s.rcpts = [];
+            await reply("250 2.0.0 OK");
+            break;
+          case "AUTH": {
+            if (s.authed) {
+              await reply("503 5.5.0 Already authenticated");
+              break;
+            }
+            const rest = line.slice(4).trim();
+            if (rest.split(" ")[0]?.toUpperCase() !== "PLAIN") {
+              await reply("504 5.5.4 Unrecognized authentication type");
+              return; // gomail errors out either way; close
+            }
+            let token = rest.slice(5).trim();
+            if (!token) {
+              await reply("334 ");
+              token = (await s.lines.next())?.trim() ?? "";
+            }
+            let ok = false;
+            try {
+              const parts = decodeB64(token).split("\0");
+              ok = parts.length === 3 && parts[1] === SUBMIT_USER && constantTimeEq(parts[2], SUBMIT_PASSWORD);
+            } catch {
+              ok = false;
+            }
+            if (!ok) {
+              await reply("535 5.7.8 Invalid credentials");
+              console.log(`[submit] bad credentials from ${conn.remoteAddr}`);
+              return;
+            }
+            s.authed = true;
+            await reply("235 2.7.0 Authentication successful");
+            break;
+          }
+          case "MAIL": {
+            if (!s.authed) {
+              await reply("503 5.5.0 Authentication required");
+              break;
+            }
+            await reply("250 2.1.0 OK");
+            break;
+          }
+          case "RCPT": {
+            if (!s.authed) {
+              await reply("503 5.5.0 Authentication required");
+              break;
+            }
+            const addr = /TO:[ \t]*<([^>]*)>/i.exec(line)?.[1]?.trim() ?? "";
+            if (addr.length > MAX_ADDRESS_LENGTH || !EMAIL_RE.test(addr)) {
+              await reply("501 5.1.3 Bad recipient address");
+              break;
+            }
+            if (s.rcpts.length >= MAX_RECIPIENTS) {
+              await reply("452 4.3.2 Too many recipients");
+              break;
+            }
+            if (!s.rcpts.includes(addr)) s.rcpts.push(addr);
+            await reply("250 2.1.5 OK");
+            break;
+          }
+          case "DATA": {
+            if (!s.authed) {
+              await reply("503 5.5.0 Authentication required");
+              break;
+            }
+            if (s.rcpts.length === 0) {
+              await reply("503 5.5.0 No valid recipients");
+              break;
+            }
+            await reply("354 End data with <CR><LF>.<CR><LF>");
+            const bodyLines: string[] = [];
+            let size = 0;
+            let tooBig = false;
+            for (;;) {
+              const l = await s.lines.next();
+              if (l === null || l === ".") break;
+              const un = l.startsWith("..") ? l.slice(1) : l; // de-dot-stuff
+              size += un.length + 2;
+              if (size > MAX_BODY_BYTES) tooBig = true;
+              bodyLines.push(un);
+            }
+            if (tooBig) {
+              await reply("552 5.3.4 Message too large");
+              break;
+            }
+            try {
+              const parsed = parseSubmission(bodyLines.join("\r\n"));
+              if ("error" in parsed) throw new Error(parsed.error);
+              await sendMail({ to: s.rcpts, subject: parsed.subject, html: parsed.html, text: parsed.text });
+              console.log(`[submit] delivered rcpt=${s.rcpts.join(",")} subject=${JSON.stringify(parsed.subject)}`);
+              await reply("250 2.0.0 OK");
+            } catch (err) {
+              // Transient (recipient gateway 451 etc.) → 451: GoTrue 500s
+              // the signup and rolls the user row back, so the guest's
+              // retry is a clean fresh attempt.
+              console.error(`[submit] delivery to ${s.rcpts.join(",")} failed: ${err}`);
+              await reply("451 4.3.0 Temporarily rejected — please try again later");
+            }
+            s.rcpts = [];
+            break;
+          }
+          case "QUIT":
+            await reply("221 2.0.0 Bye");
+            return;
+          default:
+            await reply("502 5.5.2 Command not implemented");
+        }
+      }
+    });
+  } catch (err) {
+    console.error(`[submit] session error (${conn.remoteAddr}): ${err}`);
+  } finally {
+    try {
+      conn.close();
+    } catch {
+      // already closed
+    }
+  }
+}
+
+if (SUBMIT_PASSWORD) {
+  try {
+    const [submitHost, submitPortStr] = SUBMIT_LISTEN.split(":");
+    const cert = await Deno.readTextFile(SUBMIT_CERT);
+    const key = await Deno.readTextFile(SUBMIT_KEY);
+    const submitListener = Deno.listenTls({
+      hostname: submitHost,
+      port: Number(submitPortStr ?? "465"),
+      cert,
+      key,
+    });
+    console.log(`[submit] GoTrue submission listener on ${SUBMIT_LISTEN} (implicit TLS, AUTH as ${SUBMIT_USER})`);
+    for (;;) {
+      const conn = await submitListener.accept();
+      void handleSubmitConn(conn);
+    }
+  } catch (err) {
+    console.error(`[submit] disabled: ${err}`);
+  }
+} else {
+  console.log("[submit] disabled (SMTP_SUBMIT_PASSWORD not set) — HTTP relay only");
+}

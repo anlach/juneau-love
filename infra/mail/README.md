@@ -20,9 +20,10 @@ browser → Supabase edge functions (Deno)
               ▼
         Maddy   127.0.0.1:25          (DKIM signing, direct MX delivery → internet)
               ▲
-              │  SMTP 587 STARTTLS, user notify@juneau.love
+              │  (loopback, as notify@juneau.love — the relay re-sends GoTrue's mail)
+        relay.ts :465  ←  SMTP 465 implicit TLS, user notify@juneau.love
         Supabase GoTrue (auth emails — configured in the Supabase project,
-        NOT through the relay)
+        port 465; see 6a/6b; 587→Maddy directly is the rollback path)
 ```
 
 Why the relay at all: the Supabase edge runtime denies raw TCP
@@ -150,6 +151,37 @@ systemctl daemon-reload
 systemctl enable --now mail-relay
 ```
 
+The relay also serves the **GoTrue submission listener on :465** (see
+section 6a). It needs the `mail.juneau.love` certificate, which the
+`mailrelay` user cannot read from certbot's root-only tree, so stage a
+copy and have certbot refresh it on every renewal:
+
+```sh
+# /etc/mail-relay/env gains one line:
+#   SMTP_SUBMIT_PASSWORD=<the notify@juneau.love password>
+# (same value Maddy authenticates GoTrue with; the listener is disabled
+#  without it, so local/dev runs of the HTTP relay are unaffected)
+
+install -d -m 750 -o root -g mailrelay /etc/mail-relay/tls
+cp /etc/letsencrypt/live/mail.juneau.love/fullchain.pem /etc/mail-relay/tls/
+cp /etc/letsencrypt/live/mail.juneau.love/privkey.pem  /etc/mail-relay/tls/
+chown root:mailrelay /etc/mail-relay/tls/fullchain.pem /etc/mail-relay/tls/privkey.pem
+chmod 640 /etc/mail-relay/tls/*
+
+# refresh the staging copy + restart on every renewal:
+install -d /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/mail-relay.sh <<'EOF'
+#!/bin/sh
+install -d -m 750 -o root -g mailrelay /etc/mail-relay/tls
+cp /etc/letsencrypt/live/mail.juneau.love/fullchain.pem /etc/mail-relay/tls/fullchain.pem
+cp /etc/letsencrypt/live/mail.juneau.love/privkey.pem  /etc/mail-relay/tls/privkey.pem
+chown root:mailrelay /etc/mail-relay/tls/fullchain.pem /etc/mail-relay/tls/privkey.pem
+chmod 640 /etc/mail-relay/tls/fullchain.pem /etc/mail-relay/tls/privkey.pem
+systemctl restart mail-relay
+EOF
+chmod 700 /etc/letsencrypt/renewal-hooks/deploy/mail-relay.sh
+```
+
 ## 4. TLS front for the relay (nginx)
 
 The VPS already runs nginx (other sites + certbot), and :443 belongs to
@@ -165,8 +197,11 @@ sudo nginx -t && sudo systemctl reload nginx
 TLS: the `mail.juneau.love` cert is issued and renewed by **certbot
 webroot** (the :80 block serves `/.well-known/acme-challenge/` from
 `/var/www/certbot`; everything else 301s to https). The same cert files
-are what Maddy's :587 listener uses (Option B in `maddy.conf`), so one
-cert covers both. Watch `journalctl -u nginx -f` if the handshake misbehaves.
+are what Maddy's :587 listener and the relay's :465 GoTrue listener use
+(Option B in `maddy.conf`; the relay reads the staging copies in
+`/etc/mail-relay/tls/`, refreshed by the certbot deploy hook from
+section 3), so one cert covers all three. Watch `journalctl -u nginx -f`
+if the handshake misbehaves.
 
 ## 5. Verify
 
@@ -193,8 +228,73 @@ supabase secrets set MAIL_RELAY_URL='https://mail.juneau.love' \
   MAIL_RELAY_TOKEN='<the token from /etc/mail-relay/env>'
 ```
 
+## 6a. GoTrue submission shim (port 465)
+
+GoTrue's auth emails do **not** go out in GoTrue's native message shape.
+Instead they submit to the relay's :465 listener and are re-sent through
+the same `sendMail()` code path as the edge-function mail.
+
+**Why:** umich.edu's gateway (Mimecast) intermittently `451`s GoTrue's
+native shape — single-part `text/html`, `Message-ID @<ref>.supabase.co`,
+from a residential IP — while accepting the relay's multipart shape with
+a `@juneau.love` Message-ID: 1/6 vs 4/4 across three rejecting windows on
+2026-10-24 (details + A/B table in `knowledge/platform/bugs.md`).
+Neither attribute is configurable in hosted GoTrue (its mailer pins
+`gomail v2`), so the shape has to be changed *after* GoTrue sends — i.e.
+by the relay.
+
+Wire-protocol note (verified against the exact gomail commit GoTrue
+pins, `gopkg.in/gomail.v2@v2.0.0-20160411212932-81ebce5c23df`):
+`gomail.NewDialer(host, 465, ...)` sets `SSL: port == 465` — implicit TLS
+with the server cert verified against `smtp_host` — then `EHLO` +
+`AUTH PLAIN`. That's why the shim is a plain TLS listener (no STARTTLS)
+and why it must serve a valid cert for `mail.juneau.love` (the staging
+copies from section 3). Port 465 can't be swapped for an unprivileged
+port either: gomail only uses implicit TLS when the port is *exactly*
+465 (otherwise it demands STARTTLS).
+
+**Privileged port:** 465 is <1024, and the service runs unprivileged
+(`User=mailrelay`). The unit therefore carries
+`AmbientCapabilities=CAP_NET_BIND_SERVICE` (with the matching
+`CapabilityBoundingSet`). If the startup log shows a bare
+`PermissionDenied: ... (os error 13)` **without a file path**, the bind
+failed on the capability, not the cert — `ss -tlnp | grep :465` will
+show no listener.
+
+**Deploy** (all on the VPS): update the code + env, open the port,
+restart:
+
+```sh
+scp relay.ts linuxuser@<VPS>:/tmp/relay.ts   # from this directory
+ssh linuxuser@<VPS>
+sudo cp /tmp/relay.ts /opt/mail-relay/relay.ts
+echo "SMTP_SUBMIT_PASSWORD=<notify@juneau.love password>" | sudo tee -a /etc/mail-relay/env
+sudo cp mail-relay.service /etc/systemd/system/mail-relay.service  # adds --allow-read + CAP_NET_BIND_SERVICE
+sudo ufw allow 465/tcp
+sudo systemctl daemon-reload && sudo systemctl restart mail-relay
+systemctl status mail-relay   # logs should show "[submit] GoTrue submission listener on 0.0.0.0:465"
+```
+
+**Verify without touching Supabase:** from any machine with `openssl`
+and the SMTP password:
+
+```sh
+openssl s_client -connect mail.juneau.love:465 -starttls smtp 2>/dev/null
+# (plain :465 is implicit TLS, so no -starttls; this just shows the cert)
+# a full handshake test is what the probe in section 5's flow does via a
+# real GoTrue signup after step 6b.
+```
+
+**Rollback:** `PATCH smtp_port: "587"` (section 6b) + a project restart
+returns GoTrue to talking to Maddy's :587 directly. The shim can stay up
+harmlessly, or `systemctl stop mail-relay` takes down both the shim and
+the edge-function relay (don't do the latter in production).
+
+## 6b. Point GoTrue at the shim
+
 **GoTrue SMTP** — replace Supabase's default SMTP (which only sends to
-team-member addresses, 2/hour) with Maddy, via the Management API:
+team-member addresses, 2/hour) with Maddy via the shim, using the
+Management API:
 
 ```sh
 curl -sS -X PATCH "https://api.supabase.com/v1/projects/<PROJECT_REF>/config/auth" \
@@ -206,17 +306,21 @@ curl -sS -X PATCH "https://api.supabase.com/v1/projects/<PROJECT_REF>/config/aut
     "mailer_autoconfirm": false,
     "smtp_admin_email": "notify@juneau.love",
     "smtp_host": "mail.juneau.love",
-    "smtp_port": "587",
+    "smtp_port": "465",
     "smtp_user": "notify@juneau.love",
     "smtp_pass": "<the password you hashed in step 2>",
     "smtp_sender_name": "juneau.love"
   }'
 ```
 
-The Management API wants `smtp_port` as a **string** — unquoted `587` is
+The Management API wants `smtp_port` as a **string** — unquoted `465` is
 rejected with `Invalid input: expected string, received number`.
 
-Then test a real signup (or a confirmation link) end to end.
+GoTrue reads its SMTP settings at startup, so the config change takes
+effect on the next project restart (dashboard → Settings → Restart, or
+`POST /v1/projects/<PROJECT_REF>/restart`). Then test a real signup (or
+a confirmation link) end to end; `journalctl -u mail-relay` should show a
+`[submit] delivered ...` line for it.
 
 ## 7. Operations notes
 
@@ -230,10 +334,22 @@ Then test a real signup (or a confirmation link) end to end.
   anti-spam.
 - **Bounces:** Maddy's queue/direct delivery handles retries on its own;
   with no local mailboxes, bounces are logged, not delivered anywhere.
+- **The :465 shim's security model** is the same as Maddy's :587: public
+  port, real credentials required before mail is accepted, no open relay
+  (it forwards nowhere else). The frontend's 500-retry (see
+  `knowledge/stories/register-as-guest.md`) is the safety net if a
+  recipient gateway tempfails.
 - **Certificate (deployed: Option B):** certbot's timer renews
   `mail.juneau.love` automatically (webroot through nginx); maddy reloads
-  the cert from disk, so no restart is needed. (Option A — Maddy ACME
-  dns-01 — renews itself but needs a DNS-provider API token and was not
-  used here.)
+  the cert from disk, and the deploy hook
+  (`renewal-hooks/deploy/mail-relay.sh`) re-stages the copies in
+  `/etc/mail-relay/tls/` and restarts `mail-relay` so the :465 listener
+  picks up the new cert. (Option A — Maddy ACME dns-01 — renews itself
+  but needs a DNS-provider API token and was not used here.)
+- **GoTrue shim password:** the `SMTP_SUBMIT_PASSWORD` in
+  `/etc/mail-relay/env` must stay in sync with the Supabase
+  `smtp_pass` setting — if you rotate one, rotate both (the Supabase
+  `smtp_pass` write quirk in `knowledge/platform/mail.md` means the
+  dashboard or support may be the only way to change it).
 - **The relay accepts at most 10 recipients / 256 KB per part** —
   deliberately small; the site never sends bigger.
