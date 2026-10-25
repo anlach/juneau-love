@@ -2,11 +2,12 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
 ---
 
 # Supabase project
@@ -129,7 +130,7 @@ Per [Client authentication](../api/client-auth.md):
 | Maddy submission password (GoTrue) | plaintext only in the Supabase project SMTP setting; on the VPS only as the hash in `/etc/maddy/smtp_passwd` | repo, client env |
 | S3 access key id | hosted: `S3_ACCESS_KEY_ID` edge function secret (Hippius, [Assets S3](#assets-s3-hippius-local-stack)); local: the CLI default hardcoded in [`_shared/s3.ts`](../../supabase/functions/_shared/s3.ts) (not a secret) | client env |
 | S3 secret access key | hosted: `S3_SECRET_ACCESS_KEY` edge function secret; local: the same dev fallback in `_shared/s3.ts` | client env |
-| JL_ENV (env switch, not a secret) | local: `config.toml` `[edge_runtime.secrets]` (`JL_ENV = "dev"`); hosted: **unset** (= prod) | the hosted project — a stale env-topology secret there is exactly the 2026-10-24 localhost `SITE_URL` bug ([Bug list](/bugs.md)) |
+| JL_ENV (env switch, not a secret) | local: `config.toml` `[edge_runtime.secrets]` (`JL_ENV = "dev"`); hosted: **unset** (= prod) | the hosted project — a stale env-topology secret there is exactly the 2026-10-24 localhost `SITE_URL` bug; it recurred 2026-10-25 as `JL_ENV = "dev"` smuggled in by a S3-key fix command ([Bug list](/bugs.md)) |
 | anon key | public by design (RLS is the boundary); also the `SUPABASE_ANON_KEY` edge function secret the asset functions use to call PostgREST as the user | — it ships in the browser bundle anyway |
 
 ## First-admin bootstrap

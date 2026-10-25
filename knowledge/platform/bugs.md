@@ -2,7 +2,7 @@
 type: project-notes
 title: Bug list
 description: Running log of real bugs found in the hosted Supabase project, the mail stack, and the site — with root cause, fix, and status. Newest first.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T17:12:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
 ---
 
 # Bug list
@@ -108,6 +108,43 @@ would break auth mail again.
 
 ## FIXED
 
+### Prod gallery uploads dead: hosted functions presigned against the local dev stack (2026-10-25)
+Every gallery upload by an approved guest failed with "The upload didn’t
+go through. Please try again." while `asset-upload-url` returned 200 —
+presigning *succeeded*, against the wrong endpoint. Two stacked defects,
+both children of the 2026-10-24 poisoned secret batch (entry below):
+- The hosted `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` still held the
+  local CLI stack's default credentials, so even a correctly signed Hippius
+  URL would have 403'd at the gateway (that was the failure mode all along
+  the 10/24–10/25 uploads: right Hippius topology — `JL_ENV` was then unset
+  —, default-credential signing).
+- The fix command for that (2026-10-25 18:14/18:18Z) re-poisoned the project
+  one variable at a time: `JL_ENV` (value `dev` — the local topology switch,
+  evidently copied from the local env) was set on the hosted project in the
+  same command as `S3_SECRET_ACCESS_KEY` (identical `updated_at`).
+  `JL_ENV = "dev"` makes every function sign against
+  `http://127.0.0.1:54321/storage/v1/s3` with region `local`, so each
+  returned `upload_url` pointed at the *visitor's* localhost. The tell is
+  the mixed fingerprint: a real `hip_…` access key in `X-Amz-Credential`
+  alongside region `local` and a localhost host — one environment's
+  credentials, another environment's topology.
+- Fix: real Hippius keys as hosted secrets (18:14/18:18Z) +
+  `supabase secrets unset JL_ENV` — prod leaves `JL_ENV` unset by design
+  (unset = prod topology; [Supabase project](/project.md), Secrets). No
+  redeploy: functions cold-boot per invocation, so the env change took
+  effect on the next request.
+- Lesson: a batch `secrets set` sourced from a local env re-leaks local
+  values one variable at a time — even inside the command that fixes a
+  leak. After any hosted secret write, read back
+  `GET /v1/projects/{ref}/secrets` (names + `updated_at`) and diff against
+  the prod list; `JL_ENV` is the first local value to look for.
+- Verified (2026-10-25, production logs): `JL_ENV` gone from the hosted
+  secret list (11 remain: the S3 pair, the mail-relay pair, and the
+  built-in `SUPABASE_*`); two guest uploads completed end-to-end at 19:19
+  and 19:20 UTC — `asset-upload-url` 200 → browser PUT to Hippius →
+  `POST /rest/v1/assets` 201 (the row is inserted only after the PUT
+  succeeds) → `asset-url` 200 on gallery reload.
+
 ### Orphaned `auth.users` row deadlocked register/sign-in (2026-10-25)
 Manual cleanup during the 2026-10-24 UMich debugging deleted the test
 `lacharit@umich.edu` guest's `public.users` row but left its
@@ -157,20 +194,22 @@ keys that exist only in the local `config.toml` — and re-stamped
   code is the fixed version, so the `SITE_URL`/`S3_ENDPOINT`/
   `S3_PATH_PREFIX`/`S3_REGION` secrets are inert dead weight if never
   unset.
-- Residual (cleanup only): unset the stale topology secrets on the hosted
-  project. `S3_BUCKET` is still read from env, but its local value equals
-  the prod default (`juneau-assets`).
+- Residual (done 2026-10-25): the stale topology secrets (`SITE_URL`,
+  `S3_ENDPOINT` / `S3_PATH_PREFIX` / `S3_REGION`, `S3_BUCKET`) are gone
+  from the hosted project — the secret list now holds only the S3
+  credential pair, the mail-relay pair, and the built-in `SUPABASE_*`
+  (`S3_BUCKET` is still *read* from env, default `juneau-assets`).
 - Verify: a fresh admin alert / approval email whose links open
   `https://juneau.love` (the 2026-10-24 registration retest covers this).
-  Separate live risk from the same batch: if the re-stamped
-  `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` hold the local CLI defaults,
-  hosted gallery presigned URLs sign with the wrong keys (endpoint is now
-  the Hippius constant) → 403. If a hosted gallery image URL 403s, re-set
-  the Hippius keys (live-verified in the dev shell 2026-10-24,
-  `supabase/tests/s3-presign.ts` round-trip).
+- Separate live risk (realized, resolved 2026-10-25 — see the uploads
+  entry above): the re-stamped keys did hold the local CLI defaults; the
+  real Hippius keys were set 18:14/18:18Z and live-verified
+  (`supabase/tests/s3-presign.ts` round-trip against the Hippius gateway).
 - Follow-up (owner request, still open): sweep the whole app for
   dev/local values that leaked into prod — code defaults, email templates,
-  DNS (function secrets are covered above).
+  DNS. Function-secrets half done 2026-10-25: the full hosted list
+  audited (S3 pair = real Hippius keys, fingerprint-verified; mail-relay
+  pair live; the rest built-in `SUPABASE_*`).
 
 ### Registration confirmation email is unbranded (2026-10-24)
 A guest's first email is GoTrue's default confirmation template — plain
