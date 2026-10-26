@@ -322,6 +322,85 @@ effect on the next project restart (dashboard → Settings → Restart, or
 a confirmation link) end to end; `journalctl -u mail-relay` should show a
 `[submit] delivered ...` line for it.
 
+## 6c. Reproducing the registration email without GoTrue (`sendtest`)
+
+`sendtest/` (a small standalone Go module, like `probe/`) sends the
+branded registration email through the production stack **directly — no
+GoTrue involved**. It is the reference for what a correct registration
+email looks like (the target output any relay path must reproduce), and
+it is how you get a genuinely working registration link into a test
+inbox.
+
+It is GoTrue v2.197.0-faithful in the parts that matter (verified against
+the `supabase/auth` source — see knowledge/platform/mail.md):
+
+- fetches the template URL like GoTrue's `(*Cache).fetch` (10 s timeout,
+  1 MB cap) and parses it with `html/template` (auto-escaping on — the
+  `&` in the link becomes `&amp;` inside the `href`, as in real GoTrue
+  mail);
+- builds the action link with the exact `getPath` Sprintf order
+  (`token=…&type=…&redirect_to=…`) and the `encodeRedirectURL` quirk
+  (`redirect_to` is NOT percent-encoded unless it contains `&`, `=` or
+  `#` — the production link therefore reads
+  `https://juneau.love/verify?token=…&type=signup&redirect_to=https://juneau.love/auth/confirm`);
+- uses `ConfirmationMail`'s exact data map (`{{ .ConfirmationURL }}`,
+  the `{{ with .Data }}{{ .display_name }}` greeting, …) and renders the
+  subject as a template too;
+- derives the text part with a byte-identical port of the shim's
+  `htmlToText()` (verified by diff against the JS implementation) — the
+  same text the :465 shim would synthesize from GoTrue's single-part
+  HTML;
+- POSTs `{to, subject, html, text}` to the relay's `/send` — the same
+  call the edge functions make — so the mail goes out in the relay shape
+  (multipart/alternative, `From: juneau.love <notify@juneau.love>`,
+  `Message-ID <…@juneau.love>`, DKIM-signed by Maddy).
+
+```sh
+cd infra/mail/sendtest
+
+# Render and print only (no mail):
+go run . -to adlacharite@gmail.com -dry-run
+
+# Send (needs the relay token):
+MAIL_RELAY_TOKEN=… go run . -to adlacharite@gmail.com
+
+# Deploy + run on the VPS (the token never leaves the VPS):
+GOOS=linux GOARCH=amd64 go build -o sendtest .
+scp sendtest linuxuser@66.42.121.163:/home/linuxuser/sendtest
+ssh linuxuser@66.42.121.163
+MAIL_RELAY_TOKEN="$(sudo grep "MAIL_RELAY_TOKEN=" /etc/mail-relay/env | head -1 | cut -d= -f2-)" \
+  /home/linuxuser/sendtest -to adlacharite@gmail.com
+```
+
+Flags: `-to` (required), `-email` (address shown in the body), `-name`
+(display_name for the greeting; empty = absent), `-type signup|magiclink`
+(defaults the template + subject to the matching branded recipe),
+`-redirect` (the `redirect_to`, default the register page's
+`emailRedirectTo`), `-token`, `-relay`, `-dry-run`.
+
+**Token semantics.** `-token` defaults to a random 64-hex value: the
+link has the exact shape of a real GoTrue link but confirms nothing —
+clicking it still round-trips the `/verify` hop and GoTrue's
+`redirect_to` validation (it lands on `/auth/confirm` with an error
+fragment). To make a link that genuinely confirms an account, capture a
+real token from an actual GoTrue send (capture procedure in
+`knowledge/platform/mail.md`) and pass it with `-token <captured>`.
+
+**Verify a send:**
+
+1. The tool prints `relay: HTTP 200 {"sent":true,"recipients":1}` (the
+   relay logs nothing on `/send` success, only failures).
+2. On the VPS: `sudo journalctl -u maddy --since '2 min ago'` — expect
+   `incoming message` (src 127.0.0.1), `RCPT ok`, `accepted`, and no
+   `DATA error`; `sudo ls /var/lib/maddy/queue/` empty = delivered.
+3. Recipient inbox (spam included). Expected headers: `From: juneau.love
+   <notify@juneau.love>`, `Message-ID: <…@juneau.love>`,
+   multipart/alternative, DKIM `d=juneau.love`.
+
+First successful run: 2026-10-25 20:44 UTC → `adlacharite@gmail.com`
+(Maddy `msg_id f1cefc53`, accepted; queue empty = handed to the gmail
+MX; check the inbox/spam to confirm).
+
 ## 7. Operations notes
 
 - **Logs:** `journalctl -u maddy` (delivery + bounce detail),
@@ -334,9 +413,13 @@ a confirmation link) end to end; `journalctl -u mail-relay` should show a
   anti-spam.
 - **Bounces:** Maddy's queue/direct delivery handles retries on its own;
   with no local mailboxes, bounces are logged, not delivered anywhere.
-- **The :465 shim's security model** is the same as Maddy's :587: public
-  port, real credentials required before mail is accepted, no open relay
-  (it forwards nowhere else). The frontend's 500-retry (see
+- **The :465 shim's security model:** public port, real credentials
+  required before mail is accepted, no open relay (it forwards nowhere
+  else). **Maddy's :587 does NOT have this model** — it is a plain
+  `smtp` endpoint, which makes AUTH optional, i.e. an open relay until
+  it is switched to the `submission` module (see
+  knowledge/platform/bugs.md, 2026-10-25 open-relay entry).
+  The frontend's 500-retry (see
   `knowledge/stories/register-as-guest.md`) is the safety net if a
   recipient gateway tempfails.
 - **Certificate (deployed: Option B):** certbot's timer renews

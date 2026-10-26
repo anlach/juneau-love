@@ -178,38 +178,58 @@ by project settings, not by site code:
   is not a valid check that the template is live; verify with a real
   send.
 - **A *successful* fetch can still degenerate** (2026-10-25, verified
-  twice). Mode 1 (raw email): the GET returned HTTP 200 with the URL
-  string itself as the body, so GoTrue parsed the URL as a literal-text
-  template and the guest received an email whose entire content was the
-  link to the template file; the relay shim catches that shape and
-  fetches the real document itself — see the shim section's template-URL
-  fallback. Mode 2 (relay journal 15:43, after three mode-1 sends the
-  same day): the GET returned an **empty** body, so the submitted
-  message had no body at all and the shim's parse failed ("no header/
-  body separator") → 451 → the whole signup rolled back. Both modes
-  come from Supabase's egress to the template host, not from our code
-  (plain `curl` from elsewhere gets the real file). While the hosted
-  template URL can't be trusted, keep the template settings empty —
-  GoTrue then uses its built-in default with no fetch at all.
+  twice; **root-caused 2026-10-26 — see the fabricated-egress entry in
+  [bug list](/bugs.md)**). Mode 1 (raw email): the GET "returned" HTTP
+  200 with the URL string itself as the body, so GoTrue parsed the URL
+  as a literal-text template and the guest received an email whose
+  entire content was the link to the template file. Mode 2 (relay
+  journal 15:43): the GET "returned" an **empty** body → submitted
+  message with zero body bytes → relay 451 → whole signup rolled back.
+  The 2026-10-26 controlled experiment proved the fetch **never
+  reaches the target host at all** — no mode-1/mode-2 request appears
+  in the target's access log from any Supabase IP, for VPS-hosted or
+  supabase.co-hosted URLs alike, while edge-function egress from the
+  same project works normally. Treat every non-empty
+  `mailer_templates_*_content` value as producing either a mode-1 or a
+  mode-2 send at random. GoTrue's "silent fallback to built-in default
+  on fetch failure" never fires because the fabricated response is a
+  200, not a failure. Also: **empty-string writes to the store do not
+  reliably propagate to the running GoTrue** (non-empty writes
+  propagate in <60 s) — the built-in-default escape hatch via config
+  is unusable without a service restart.
 - The rendered body is sent as `text/html`, with no plain-text part.
 - Confirmation/magiclink template variables: `.ConfirmationURL` (the
   action link — both types use this name), `.Email`, `.Token`,
   `.TokenHash`, `.Data` (user metadata — the registration's
   `display_name`; may be nil, guard with nested `with` actions),
   `.RedirectTo`, `.SiteURL`.
-- The templates are repo files served by the site: `static/email/`
-  (copied verbatim into the build). Their HTML comments must not
-  contain `{{ }}` — template actions inside comments break the parse
-  and trip the silent fallback. To rebrand: re-PATCH
-  `mailer_templates_confirmation_content` =
-  `https://juneau.love/email/confirmation.html`,
-  `mailer_templates_magic_link_content` =
-  `https://juneau.love/email/magic-link.html`, subjects
-  `mailer_subjects_confirmation` = "Confirm your juneau.love email",
-  `mailer_subjects_magic_link` = "Your juneau.love sign-in link" —
-  then **read the values back** (Management API drops writes silently)
-  and verify with a real send. As of 2026-10-25 the settings were reset
-  to empty (built-in defaults) for exactly the flaky-fetch reason above.
+- The templates are repo files. **Current production architecture
+  (2026-10-26)**: the canonical file is `static/email/confirmation.html`
+  (repo), deployed to the VPS as
+  `/var/www/mail-relay-templates/confirmation.html` and served at
+  `https://mail.juneau.love/gotrue/confirmation.html` (fetches logged to
+  `/var/log/nginx/gotrue-template-fetches.log` — the observability
+  point that exposed the fabricated egress). The store's
+  `mailer_templates_confirmation_content` points at the public edge
+  function **`https://asuupanisvfxvbmdpcxt.supabase.co/functions/v1/
+  email-template`** (`supabase/functions/email-template/index.ts`,
+  deployed with `--no-verify-jwt`): it live-fetches the VPS URL and
+  falls back to an embedded copy of the template. Even when GoTrue's
+  broken egress produces mode 1 (function URL as body), the relay's
+  `resolveTemplateUrl` fetches that public function itself and
+  re-sends the full branded email with a valid confirmation link —
+  verified in production 2026-10-26 (relay journal "resolved template
+  URL … (2541 bytes)"). Mode 2 (empty body) still 451s and rolls back;
+  the register page's auto-retry (10/30/60 s) re-rolls the mode. The
+  HTML comments must not contain `{{ }}` (template actions inside
+  comments break the parse). **To rebrand**: edit
+  `static/email/confirmation.html` → copy to the VPS staging path (or
+  update the embedded fallback in the function and redeploy: `~/.local/
+  bin/supabase functions deploy email-template --no-verify-jwt`).
+  `mailer_templates_magic_link_content` is still empty (built-in
+  default; the magiclink path is only the register page's "already
+  registered" probe). GoTrue caches template fetches ~10 min, so a
+  rebrand takes effect within ~10 min without any restart.
 - **Action links: the `/verify` hop.** GoTrue builds the action link as
   `SiteURL + URLPaths.Confirmation` (default path `/verify`) with
   `?token=…&type=…&redirect_to=…`. `site_url` must stay
@@ -238,6 +258,29 @@ sent; `registration-decision` reports `email_sent: false`). GoTrue's
 local stack uses Supabase's local SMTP (loopback) and, with local
 autoconfirm on, never sends confirmation mail — see [project
 notes](/project.md), Local development.
+
+## Sending a reference registration email without GoTrue (`sendtest`)
+
+To test the branded templates end to end — or to put a genuinely working
+registration link into a test inbox — `infra/mail/sendtest` (Go, its own
+module like `probe/`) renders the template exactly as GoTrue v2.197.0
+does (template fetch limits, `html/template` escaping, `getPath`
+Sprintf link order, `ConfirmationMail` data map) and POSTs the result to
+the relay's `/send`, so it goes out in the relay shape. It is the
+**target output** for the relay work: whatever shape a real GoTrue send
+should take after the shim, `sendtest` produces it directly.
+
+- Full usage + verification checklist:
+  `infra/mail/README.md`, section 6c.
+- `-token` defaults to a random 64-hex value: right link shape, confirms
+  nothing (the `/verify` hop and `redirect_to` validation still get
+  exercised). Pass a token captured from a real GoTrue send to make the
+  link genuinely confirm an account.
+- The text part is a byte-identical port of the shim's `htmlToText()`
+  (verified by diff against the JS implementation).
+- First successful run 2026-10-25 20:44 UTC: branded confirmation email
+  to `adlacharite@gmail.com`, Maddy accepted, queue empty = handed to
+  the gmail MX (inbox receipt to be confirmed by the owner).
 
 ## Rotating the Maddy submission password (GoTrue)
 
@@ -349,9 +392,26 @@ password (clear and SHA-256), MAIL FROM / RCPT, and the complete message
 
 - Logs: `journalctl -u maddy` (delivery/bounces), `-u mail-relay` (one
   line per accepted send), `-u nginx` (TLS / relay front).
+- **Submission capture is ON in production** (deployed with commit
+  92e7ebb, 2026-10-25): every `:465` submission writes the raw SMTP
+  transcript (headers + full body) to
+  `/var/lib/mail-relay/captures/` (`SMTP_SUBMIT_CAPTURE_DIR`), mode 0600,
+  owned by `mailrelay` — `sudo ls` / `sudo cat`. Filenames are
+  `<ISO-timestamp>-<seq>.eml`. The unit has `--allow-read` and
+  `--allow-write` for the dir (fixed 2026-10-26 — before that the
+  capture/prune threw `NotCapable` and the log line never printed), and
+  the deployed relay reconstructs captures CRLF-faithfully, so an empty
+  body is visible as a trailing blank line (the relay's parse error for
+  that shape is "no usable body part"). The capture also records
+  whether the client ended the session before/after DATA (the
+  early-DATA-termination discriminator from knowledge/platform/bugs.md).
+  Newest captures first; pruned to the 20 most recent.
 - The VPS needs **outbound** TCP 25 (provider-dependent — GCP blocks it;
   Hetzner-style unblock requests exist). Inbound 25 is never public
-  (Maddy's listener is loopback-only).
+  (Maddy's listener is loopback-only). **Inbound 587 is public and, as
+  of 2026-10-25, an open relay** (unauthenticated external submissions
+  accepted and relayed, Oct 23–24 spam abuse observed) — see the
+  open-relay entry in knowledge/platform/bugs.md.
 - Bounces are logged, not delivered (no mailboxes).
 - Cert renewal: certbot's timer renews `mail.juneau.love` automatically
   (webroot via nginx); no restart needed on either side.

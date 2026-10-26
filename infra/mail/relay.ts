@@ -718,7 +718,12 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
               // ending cleanly. Treat as early termination, not a crash.
               term = "error";
             }
-            const rawSubmission = bodyLines.join("\r\n");
+            // Faithful wire reconstruction: every SMTP DATA line is
+            // CRLF-terminated on the wire, so terminate each line. A plain
+            // join("\r\n") drops the final CRLF — which is exactly the
+            // header/body separator of a bodyless (headers + blank line)
+            // message, making it unparseable (2026-10-25 production bug).
+            const rawSubmission = bodyLines.map((l) => l + "\r\n").join("");
             void captureSubmission(s.rcpts, rawSubmission, term);
             if (term !== "dot") {
               // Nothing deliverable: GoTrue's net/smtp client vanished

@@ -22,7 +22,12 @@ Wants=network-online.target
 [Service]
 User=mailrelay
 WorkingDirectory=/opt/mail-relay
-ExecStart=/usr/local/bin/deno run --allow-net --allow-env --allow-read=/etc/mail-relay/tls /opt/mail-relay/relay.ts
+# The capture dir needs BOTH --allow-read (captureSubmission's prune step
+# does Deno.readDir) and --allow-write (writing each capture) — without
+# them captureSubmission throws NotCapable and the "[submit] captured …"
+# log line never prints (2026-10-26). The TLS dir needs --allow-read for
+# the :465 listener certs.
+ExecStart=/usr/local/bin/deno run --allow-net --allow-env --allow-read=/etc/mail-relay/tls --allow-read=/var/lib/mail-relay/captures --allow-write=/var/lib/mail-relay/captures /opt/mail-relay/relay.ts
 Restart=always
 RestartSec=5
 EnvironmentFile=/etc/mail-relay/env
