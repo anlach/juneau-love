@@ -23,20 +23,16 @@ pinned gomail does (EHLO, AUTH PLAIN, MAIL, RCPT, DATA):
                       production 2026-10-25 02:49:32 UTC.)
   3. recovery       — a valid session immediately after the bad one →
                       250 OK (the relay is still serving).
-  4. template-URL   — GoTrue's degenerate case observed in production
-                      2026-10-25: the rendered HTML body is just the
-                      template URL itself (GoTrue's fetch came back with
-                      the URL string as the body, so the guest received
-                      an email whose entire content was the link to the
-                      template file). The shim must fetch that URL and
-                      embed the real document instead.
+  4. early-EOF      — the client closes mid-DATA (headers sent, no
+                      terminator): the relay must log it, keep running,
+                      and the other sessions' submissions must still be
+                      captured to disk.
 
 Requires: deno 2.x and openssl on PATH. Nothing else (stdlib only).
 Run:  python3 infra/mail/test_relay_submit.py
 """
 
 import base64
-import http.server
 import os
 import re
 import socket
@@ -71,15 +67,6 @@ HTML = (
 )
 RECIPIENT = "tester@umich.edu"
 SUBJECT = "Confirm your juneau.love email"
-
-# Served by a local HTTP server; what a *correct* template fetch yields.
-MARKER_RESOLVED = "juneau-love-resolved-template-marker"
-RESOLVED_DOC = (
-    "<!doctype html><html><head><meta charset=\"utf-8\"><title>Confirm</title></head>"
-    "<body><h1>Hi Tester, confirm your email address</h1>"
-    f"<p>Real document from the template server. {MARKER_RESOLVED}</p>"
-    "</body></html>"
-)
 
 
 def free_port():
@@ -124,27 +111,6 @@ def gotrue_message():
     """The message GoTrue v2.197.0 (pinned gomail) submits: single-part
     text/html, quoted-printable, no plain part, Message-ID @supabase.co."""
     return message_with_body(HTML)
-
-
-class TemplateServer:
-    """Stands in for https://juneau.love/email/confirmation.html."""
-
-    def __init__(self, port, doc):
-        docb = doc.encode()
-
-        class H(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(docb)))
-                self.end_headers()
-                self.wfile.write(docb)
-
-            def log_message(self, *a):
-                pass
-
-        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
 
 class Sink:
@@ -287,10 +253,7 @@ def main():
     )
 
     http_port, sink_port, submit_port = free_port(), free_port(), free_port()
-    tpl_port = free_port()
     sink = Sink(sink_port)
-    tpl_url = f"http://127.0.0.1:{tpl_port}/confirmation.html"
-    TemplateServer(tpl_port, RESOLVED_DOC)
     capture_dir = os.path.join(tmp, "captures")
     os.mkdir(capture_dir)
 
@@ -455,54 +418,8 @@ def main():
         except Exception as e:
             check("recovery session completed", False, repr(e))
 
-        # -- 4. degenerate body: bare template URL -------------------------
-        print("\n[4] degenerate GoTrue body (bare template URL) is resolved")
-        try:
-            c = Client(submit_port)
-            c.cmd("EHLO repro.test")
-            token = base64.b64encode(f"\0{SUBMIT_USER}\0{SUBMIT_PASSWORD}".encode()).decode()
-            c.cmd(f"AUTH PLAIN {token}")
-            c.cmd(f"MAIL FROM:<{SUBMIT_USER}>")
-            c.cmd(f"RCPT TO:<{RECIPIENT}>")
-            check("DATA ok (tpl-url)", c.code(c.cmd("DATA")) == "354")
-            c.send_data(message_with_body(tpl_url) + "\r\n.\r\n")
-            check("tpl-url message accepted (250)", c.code(c.response()) == "250")
-            c.close()
-        except Exception as e:
-            check("tpl-url session completed", False, repr(e))
-
-        time.sleep(0.5)
-        with sink.lock:
-            got = list(sink.messages)
-        check("sink received the tpl-url message", len(got) >= 2, f"got {len(got)}")
-        if len(got) >= 2:
-            m = got[-1]
-            html_part = re.search(
-                r"Content-Type: text/html; charset=utf-8\r\n"
-                r"Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n--",
-                m,
-            )
-            decoded = (
-                base64.b64decode(re.sub(r"\s+", "", html_part.group(1))).decode()
-                if html_part
-                else ""
-            )
-            text_part = re.search(
-                r"Content-Type: text/plain; charset=utf-8\r\n"
-                r"Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n--",
-                m,
-            )
-            text_decoded = (
-                base64.b64decode(re.sub(r"\s+", "", text_part.group(1))).decode()
-                if text_part
-                else ""
-            )
-            check("real document embedded (not the bare URL)", MARKER_RESOLVED in decoded)
-            check("text part derived from the resolved document", "confirm your email address" in text_decoded)
-            check("relay logged the template resolution", "resolved template URL" in log_snapshot())
-
-        # -- 5. client vanishes mid-DATA -------------------------------------
-        print("\n[5] client closes mid-DATA (early EOF must be logged, not fatal)")
+        # -- 4. client vanishes mid-DATA -------------------------------------
+        print("\n[4] client closes mid-DATA (early EOF must be logged, not fatal)")
         try:
             c = Client(submit_port)
             c.cmd("EHLO repro.test")
@@ -546,7 +463,7 @@ def main():
     if failures:
         print(f"RESULT: FAIL ({len(failures)} check(s) failed: {', '.join(failures)})")
         return 1
-    print("RESULT: PASS (valid session, bad-AUTH survived, recovery OK, template URL resolved, early-EOF logged + captured)")
+    print("RESULT: PASS (valid session, bad-AUTH survived, recovery OK, early-EOF logged + captured)")
     return 0
 
 

@@ -7,11 +7,12 @@ This document is the source of truth for this work. **Where
 `knowledge/` docs conflict with this one, this document wins** — several
 knowledge conclusions turned out to be wrong (see §2).
 
-**Status (2026-10-26, later):** bisection complete. The relay path
-accepts the fully rendered message (2/2, bracketed) — the relay's
-reshaping is exonerated; the unrendered `{{ }}` body is the prime
-suspect. Moving to the fix phase: inline the template in GoTrue's
-config (no deployed code), then a live-signup test (§4).
+**Status (2026-10-26, evening — closed):** template inlined in
+GoTrue's config (§4 step 1), live-signup test passed (§4 step 2 —
+**Accepted** branch), cleanup done (§7). Final root-cause guess: the
+451s were triggered by the degenerate bodies the fabricated template
+fetch produced (bare URL / empty / raw unrendered `{{ }}`), not by
+message shape or sending IP.
 
 ## 1. Proven facts (controlled tests, 2026-10-26)
 
@@ -221,3 +222,78 @@ direct-`:587` control. Read Maddy's journal ~8 s after the send (§6).
   unrendered** template — §3).
 - Maddy: `/etc/maddy/maddy.conf`; all outbound delivery goes
   Maddy → recipient MX from 66.42.121.163 regardless of entry point.
+
+## 7. Final status (2026-10-26, evening) — §4 step 2 = **Accepted**, cleanup done
+
+**Step 1 (owner, config-only):** `mailer_templates_confirmation_content`
+set to the raw template document (byte-identical to
+`static/email/confirmation.html`; store read-back verified — 2541 B,
+no `{{ }}` markers present, no URL). Since that write: **zero 451s**.
+
+**Step 2 (live test + first real registration):**
+- 14:14–15:02 UTC: owner-run brackets — emailer `:587` direct controls +
+  `-via-relay` sends, plus `sendtest` via `/send`: **every umich-bound
+  send accepted** (maddy journal `RCPT ok` → `accepted`, no `DATA
+  error`; note Maddy logs success only implicitly — failures log `DATA
+  error`). Captures confirm fully rendered bodies.
+- **15:06 UTC: the first real registration** (rise0245@proton.me)
+  through the full production path (GoTrue → relay :465 → Maddy →
+  proton MX): delivered. Two confirmation emails 10 s apart with
+  different tokens: the register page's 10 s retry fired while the
+  first send was still in flight (the relay only answers GoTrue 250
+  after the *remote MX* accepts DATA — proton took ~10 s), the first
+  signup rolled back (speculation: the supabase.co edge proxy times the
+  ~10 s synchronous send out and GoTrue rolls back the cancelled
+  transaction) and the second created the account. Harmless side
+  effect: one dead token in the inbox (clicking it would show
+  "invalid/expired").
+- **Action-link finding:** the real GoTrue link points directly at the
+  hosted verify endpoint —
+  `https://<ref>.supabase.co/auth/v1/verify?token=…&type=signup&
+  redirect_to=https://juneau.love/auth/confirm` — not at
+  `juneau.love/verify`. Hosted GoTrue anchors action links to the
+  project URL, not SiteURL. The site's `/verify` hop is therefore a
+  fallback for SiteURL-anchored links (kept; it works — bad-token probe
+  10-26). Knowledge docs updated accordingly.
+
+**Root cause (final guess):** see the FIXED entry in
+`knowledge/platform/bugs.md`. Body content was the trigger; shape and IP
+exonerated. Caveat kept in the docs: umich's accept/reject windows drift,
+so content is a strong association, not a proven single cause. The
+inlined template removes the content trigger entirely.
+
+**Cleanup (this branch, commits after d329c4f):**
+- relay: `resolveTemplateUrl` rescue + its constants removed (it shipped
+  raw `{{ }}` bodies — the very content umich rejected); test §4 removed;
+  `deno check` + full `test_relay_submit.py` pass. Shim kept (proven
+  path + capture host); its "Why" comments corrected.
+- `supabase/functions/email-template/` + `knowledge/api/email-template.md`
+  deleted (dead once the template is inlined).
+- knowledge: mail.md (inlined-template architecture, rebrand recipe,
+  action-link observation), bugs.md (saga condensed — no historical
+  list), client-auth.md (link origin).
+- `umich587test.go` emailer: committed in d329c4f for the record, then
+  deleted (bisection done).
+
+**Left for the owner (system-side, outside the repo):**
+1. Deploy the cleaned relay + restart:
+   ```sh
+   scp infra/mail/relay.ts linuxuser@66.42.121.163:/tmp/relay.ts
+   ssh linuxuser@66.42.121.163
+   sudo cp /tmp/relay.ts /opt/mail-relay/relay.ts && sudo systemctl restart mail-relay
+   ```
+2. Delete the deployed edge function:
+   ```sh
+   ~/.local/bin/supabase functions delete email-template --project-ref asuupanisvfxvbmdpcxt
+   ```
+3. Remove the VPS template staging + nginx location (in
+   `/etc/nginx/sites-available/mail-acme`, the `location = /gotrue/confirmation.html`
+   block) + `sudo rm -r /var/www/mail-relay-templates /var/log/nginx/gotrue-template-fetches.log`
+   + `sudo nginx -t && sudo systemctl reload nginx`.
+4. Optional: confirm the 14:15/14:19/15:00/15:02 umich test emails in the
+   umich inbox (maddy shows accepted; only the owner can see the inbox).
+
+**Watch item:** if umich 451s again on *rendered* bodies, it's a
+hosting/IP problem (window drift or reputation) — see the WATCH entry in
+`knowledge/platform/bugs.md`. The register page's 10/30/60 s retry is
+the backstop.

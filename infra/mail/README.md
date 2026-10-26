@@ -234,14 +234,16 @@ GoTrue's auth emails do **not** go out in GoTrue's native message shape.
 Instead they submit to the relay's :465 listener and are re-sent through
 the same `sendMail()` code path as the edge-function mail.
 
-**Why:** umich.edu's gateway (Mimecast) intermittently `451`s GoTrue's
-native shape — single-part `text/html`, `Message-ID @<ref>.supabase.co`,
-from a residential IP — while accepting the relay's multipart shape with
-a `@juneau.love` Message-ID: 1/6 vs 4/4 across three rejecting windows on
-2026-10-24 (details + A/B table in `knowledge/platform/bugs.md`).
-Neither attribute is configurable in hosted GoTrue (its mailer pins
-`gomail v2`), so the shape has to be changed *after* GoTrue sends — i.e.
-by the relay.
+**Why:** GoTrue's pinned mailer (gomail v2) only speaks implicit TLS on
+port 465, so it submits to the relay and the mail goes out through the
+same `sendMail()` as the edge-function mail — the shape umich.edu has
+accepted on every production send. The original rationale (umich's
+gateway 451s GoTrue's native shape — single-part `text/html`,
+`Message-ID @<ref>.supabase.co` — 1/6 vs 4/4 across three windows on
+2026-10-24) was superseded by the 2026-10-26 bisection: the 451s tracked
+degenerate *bodies* (raw unrendered template / bare URL / empty), not
+shape; the inlined GoTrue template config now guarantees rendered bodies.
+The shim remains the proven, capture-equipped path.
 
 Wire-protocol note (verified against the exact gomail commit GoTrue
 pins, `gopkg.in/gomail.v2@v2.0.0-20160411212932-81ebce5c23df`):
