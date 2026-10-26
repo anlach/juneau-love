@@ -14,11 +14,20 @@ test.describe('anonymous visitor', () => {
 		await expect(page.getByRole('navigation').getByRole('link', { name: 'Register' })).toBeVisible();
 		// No guest-only entry points leak to anonymous.
 		await expect(page.getByRole('link', { name: 'Photos' })).toHaveCount(0);
+		await expect(page.getByRole('link', { name: 'Things to Do' })).toHaveCount(0);
 	});
 
 	test('gallery is gated behind sign-in', async ({ page }) => {
 		await page.goto('/gallery');
 		await expect(page.getByRole('heading', { name: /a private photo corner/i })).toBeVisible();
+	});
+
+	test('things to do is gated behind sign-in', async ({ page }) => {
+		await page.goto('/things-to-do');
+		await expect(page.getByRole('heading', { name: /sign in to continue/i })).toBeVisible();
+		// No guide content or map download leaks to anonymous.
+		await expect(page.getByRole('heading', { name: /things to do in juneau/i })).toHaveCount(0);
+		await expect(page.getByRole('link', { name: /download/i })).toHaveCount(0);
 	});
 
 	test('registrations is gated behind sign-in', async ({ page }) => {
