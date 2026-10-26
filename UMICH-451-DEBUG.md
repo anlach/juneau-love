@@ -197,7 +197,9 @@ direct-`:587` control. Read Maddy's journal ~8 s after the send (§6).
   ```fish
   set -x MAIL_PASS (ssh linuxuser@66.42.121.163 "sudo grep '^SMTP_SUBMIT_PASSWORD=' /etc/mail-relay/env | cut -d= -f2")
   ```
-- The emailer (repo root):
+- The emailer (was in the repo; **deleted after the bisection** —
+  `infra/mail/umich587test.go` lives in git history from d329c4f;
+  historical usage:)
   ```fish
   go run infra/mail/umich587test.go            # direct :587 (control)
   go run infra/mail/umich587test.go -via-relay # through the relay :465 (accepted 2/2, 10-26)
