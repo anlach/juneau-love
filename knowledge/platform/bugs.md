@@ -277,6 +277,53 @@ once-per-registration admin alert were silently consumed by log-only sends.
 
 ## WATCH
 
+### Duplicate confirmation email when the remote MX is slow (2026-10-26)
+A guest who registers receives **two** confirmation emails ~10 s apart —
+the first with a **dead token** (click → invalid/expired), the second the
+working one. Observed twice 2026-10-26: the first real registration
+(15:06 UTC, proton.me) and a repeat test (16:57 UTC, same recipient).
+- Chain: GoTrue sends the confirmation email **synchronously** inside the
+  signup transaction, and the relay's `:465` shim only answers 250 after
+  the **remote MX** accepts DATA — Maddy's `:25` handoff is synchronous
+  `deliver_to remote` (no queue). A slow MX (proton ~10 s) outlives the
+  supabase.co stack's patience: the browser gets a 500 ~1 s into the
+  request while the send is still in flight, GoTrue rolls the signup back
+  (user row + token die), yet the mail still arrives. The register
+  page's 10 s retry ([Client authentication](../api/client-auth.md), Flow 1)
+  then creates a fresh signup with a fresh token → the second email.
+- The relay is not duplicating: `captureSubmission` is a write-only
+  diagnostic (`/var/lib/mail-relay/captures/`) that never feeds back into
+  the send path. 16:57 evidence: exactly one `delivered` per `captured`,
+  and the two captures are two distinct GoTrue submissions with different
+  tokens (`620b33df…` vs `793fcd50…`).
+- Not a client-timeout fix: the client has no timeout to raise (no
+  `AbortController` in `src/` — fetch waits indefinitely). Back-computed
+  from the db: attempt 2's `users` row `created_at 16:57:33.99` minus the
+  10 s retry delay ⇒ attempt 1's 500 landed ≈ 16:57:23.9, seconds after
+  the send started. The server gave up first.
+- Not fixable on the Maddy side: queuing on `:25` would let GoTrue get
+  its 250 instantly, but it would also swallow the umich-451 → 500 →
+  client retry backstop (a 451 would surface asynchronously — signup
+  commits with no mail, and the guest waits on Maddy's retry schedule;
+  see the UMich WATCH entry below).
+- Data integrity held: exactly one `users` row (from the surviving
+  attempt), email confirmed with the second token; `notify-registration`
+  is idempotent via `admin_notified_at`. The cost is one dead token in
+  the inbox.
+- Open diagnostic (dashboard only — owner): the GoTrue/Auth logs around
+  16:57:24 UTC show why the supabase.co stack 500'd the slow send that
+  fast (proxy vs GoTrue's own SMTP timeout). If it is a GoTrue SMTP
+  timeout, the project's SMTP setting may have a knob to raise — the
+  only fix that yields a single email.
+- Candidate hardening (not for this case): a pre-retry
+  `shouldCreateUser: false` probe would catch the *opposite* race (attempt
+  1 committed but the client saw a 500). Here attempt 1 rolled back, so
+  the probe 422s and the retry proceeds anyway. Caveat: the probe has a
+  link-sending side effect for known emails
+  ([Client authentication](../api/client-auth.md), Flow 1).
+- Accepted for now: it requires a remote MX slow enough to outlive the
+  proxy, and a working token always arrives within the 4 attempts.
+
 ### UMich can still tempfail — keep an eye on it (2026-10-24)
 umich.edu's gateway temp-fails in drifting windows (accept/reject days
 interleave even for the same sender→recipient). Since the 2026-10-26
