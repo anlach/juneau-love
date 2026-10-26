@@ -52,6 +52,20 @@ test.describe('pending registration', () => {
 		await expect(page.getByRole('heading', { name: /photos/i })).toHaveCount(0);
 	});
 
+	test('pending guest is blocked from things to do', async ({ page }) => {
+		const email = await createUnconfirmedUser('Blocked Bea');
+		created.push(email);
+
+		await openAuthLink(page, email, 'signup');
+		await expect(page).toHaveURL('/');
+		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
+
+		await page.goto('/things-to-do');
+		// The pending screen, not the guide.
+		await expect(page.getByText(/you.re on the list/i)).toBeVisible();
+		await expect(page.getByRole('heading', { name: /things to do in juneau/i })).toHaveCount(0);
+	});
+
 	test('awaiting-approval screen fires the admin notification (fallback)', async ({ page }) => {
 		const email = await createUnconfirmedUser('Fallback Frank');
 		created.push(email);

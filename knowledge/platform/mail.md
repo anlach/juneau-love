@@ -208,7 +208,9 @@ default; only its subject is branded) — login links are unbranded.
   (`src/routes/verify/`) is the hop for SiteURL-anchored links: it passes
   the query string through to that same endpoint. `site_url` must stay
   `https://juneau.love` (the `redirect_to` rewrite — [project
-  notes](/project.md)).
+  notes](/project.md)), and the hosted Management API exposes no
+  `mailer_url_paths_*` keys to redirect the link by config (243-key
+  schema; a PATCH containing them returns 200 and silently drops them).
 
 ## Local development
 

@@ -20,8 +20,9 @@ lived here: [Design tokens](/tokens.md).
   status](../stories/access-by-approval-status.md), not here):
   - signed out → "Sign in" + "Register" (both plain nav links — no
     button styling in the nav)
-  - ready → "Photos" (approved only), "Registrations"
-    (`registrations:read` only), the display name (`.who`, italic muted),
+  - ready → "Photos" (approved only), "Things to Do"
+    (approved only), "Registrations" (`registrations:read` only), the
+    display name (`.who`, italic muted),
     an **account menu**: `.menu-btn` (a stack of three lines, `aria-label`
     `"Menu"`, `aria-haspopup="menu"`) toggles a `.menu` dropdown
     (`role="menu"`) of `.menu-item` entries — "Change Name" (link to
@@ -71,6 +72,20 @@ approval status (any signed-in user, including `pending`, may edit the
 name — the business rule in [Change display name]
 (../stories/change-display-name.md)); anonymous visitors get a sign-in
 card, and the field is prefilled from the profile once it has loaded.
+
+## Things-to-do page (/things-to-do)
+
+The guest guide page ([Things to Do guide](../stories/things-to-do.md)) —
+an approval-gated **content** page: the anonymous view reuses the
+registrations page's "Sign in to continue" card, and pending/rejected/
+error render the shared `StateScreen`. The approved view is a plain
+article column (`.guide`, max-width 46rem) in the Bona Nova body face:
+the title in the `.display` script with the "(Like a Local on a Budget)"
+subtitle in muted italic, a gold left-rail `.note` for the caveat
+paragraph, and the 2019 travel map in a bordered `iframe` (`.map-frame`,
+640px) above a `download`-attribute `.btn.ghost` link. The map is a
+committed static asset (`static/juneau-map.pdf`) — no presign/RLS
+machinery, just GitHub Pages serving the file.
 
 ## Depends on
 
