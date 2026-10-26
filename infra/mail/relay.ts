@@ -5,7 +5,7 @@
 // Deno.connect — its user worker's net permission scope is empty), so every
 // email the site sends goes:
 //
-//   edge function --HTTPS--> Caddy (mail.juneau.love)
+//   edge function --HTTPS--> nginx (mail.juneau.love)
 //              --loopback--> this relay --SMTP--> Maddy (127.0.0.1:25)
 //              --direct MX delivery--> internet
 //
@@ -13,8 +13,8 @@
 // (Supabase custom SMTP) submits to this process's :465 listener, which
 // re-sends the mail through the same sendMail() as everything else — see
 // the "GoTrue submission shim" section below and knowledge/platform/
-// bugs.md (why: umich.edu's gateway 451s GoTrue's native message shape but
-// accepts this one).
+// bugs.md for why the shim stays (the message shape was exonerated in the
+// 2026-10-26 bisection; it remains the proven, capture-equipped path).
 //
 // Maddy signs with DKIM; SPF/DMARC come from DNS (see README.md here and
 // knowledge/platform/mail.md in the repo).
@@ -68,6 +68,29 @@ const SUBMIT_KEY = Deno.env.get("SMTP_SUBMIT_KEY") ?? "/etc/mail-relay/tls/privk
 // The account GoTrue must authenticate as: Supabase's `smtp_user`.
 const SUBMIT_USER = Deno.env.get("SMTP_SUBMIT_USER") ?? FROM_ADDRESS;
 const SUBMIT_PASSWORD = Deno.env.get("SMTP_SUBMIT_PASSWORD") ?? "";
+// When set, every submission's raw DATA (de-dot-stuffed) is saved here so
+// what GoTrue actually sends can be inspected. Last 20 files kept.
+const SUBMIT_CAPTURE_DIR = Deno.env.get("SMTP_SUBMIT_CAPTURE_DIR") ?? "";
+
+let captureSeq = 0;
+async function captureSubmission(rcpts: string[], raw: string, how: string): Promise<void> {
+  if (!SUBMIT_CAPTURE_DIR) return;
+  try {
+    captureSeq += 1;
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const name = `${ts}-${captureSeq}.eml`;
+    await Deno.writeTextFile(`${SUBMIT_CAPTURE_DIR}/${name}`, raw);
+    const entries: string[] = [];
+    for await (const e of Deno.readDir(SUBMIT_CAPTURE_DIR)) entries.push(e.name);
+    entries.sort();
+    for (const old of entries.slice(0, Math.max(0, entries.length - 20))) {
+      try { await Deno.remove(`${SUBMIT_CAPTURE_DIR}/${old}`); } catch { /* gone */ }
+    }
+    console.log(`[submit] captured ${name} bytes=${raw.length} term=${how} rcpt=${rcpts.join(",")}`);
+  } catch (e) {
+    console.warn(`[submit] capture failed: ${errToString(e)}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP layer
@@ -343,16 +366,17 @@ console.log(`[relay] listening on ${LISTEN}, handing off to ${SMTP_TARGET} as ${
 // GoTrue submission shim (port 465)
 // ---------------------------------------------------------------------------
 //
-// Why: umich.edu's gateway intermittently 451s GoTrue's native message
-// shape (single-part text/html, Message-ID @<ref>.supabase.co —
-// internal/mailer/mailmeclient + the pinned gomail) while accepting the
-// relay's multipart shape (Message-ID @juneau.love): 1/6 vs 4/4 across
-// three rejecting windows on 2026-10-24 (knowledge/platform/bugs.md).
-// Neither attribute is configurable in hosted GoTrue, so GoTrue now
+// Why: GoTrue's pinned mailer only speaks implicit TLS on port 465, so it
 // submits to THIS listener and the mail goes out through sendMail() above
-// — the exact shape that is accepted. GoTrue's 500-on-send-failure
-// semantics are preserved: a delivery failure returns 451 here, GoTrue
-// 500s the signup, and the whole signup (user row included) rolls back.
+// — the shape umich.edu has accepted on every production send. The
+// original rationale (umich 451s GoTrue's native shape) was superseded by
+// the 2026-10-26 bisection: the 451s tracked degenerate *bodies* (raw
+// unrendered template / bare URL / empty), not shape — the inlined GoTrue
+// template config now guarantees rendered bodies (knowledge/platform/
+// mail.md). The shim remains the proven, capture-equipped path. GoTrue's
+// 500-on-send-failure semantics are preserved: a delivery failure returns
+// 451 here, GoTrue 500s the signup, and the whole signup (user row
+// included) rolls back.
 //
 // Wire protocol (verified 2026-10-24 against the exact pinned gomail
 // commit, v2.0.0-20160411212932-81ebce5c23df, smtp.go):
@@ -517,40 +541,6 @@ function parseSubmission(raw: string): ParsedMail | { error: string } {
   return { subject, html, text };
 }
 
-// Defense-in-depth against GoTrue's template fetch. The configured
-// mailer_templates_*_content values are URLs that GoTrue GETs and parses
-// as Go html/template; in production (2026-10-25) the fetch came back with
-// the URL string itself as the body, so GoTrue rendered the URL as literal
-// text and the guest received an email whose entire content was
-// "https://juneau.love/email/confirmation.html". Detect that degenerate
-// case and fetch the real document ourselves. Any failure falls back to
-// the body as given, so a problem stays visible instead of vanishing.
-const BARE_URL_RE = /^https?:\/\/[^\s]+$/i;
-const TEMPLATE_FETCH_TIMEOUT_MS = 10_000; // matches GoTrue's fetch timeout
-const MAX_TEMPLATE_BYTES = 1_000_000; // matches GoTrue's TemplateMaxSize
-
-async function resolveTemplateUrl(html: string): Promise<string> {
-  const trimmed = html.trim();
-  if (!BARE_URL_RE.test(trimmed)) return html;
-  try {
-    const res = await withTimeout(TEMPLATE_FETCH_TIMEOUT_MS, () => fetch(trimmed));
-    if (!res.ok) {
-      console.warn(`[submit] template URL ${trimmed} -> HTTP ${res.status}; sending body as-is`);
-      return html;
-    }
-    const body = await res.text();
-    if (!body.trim() || body.length > MAX_TEMPLATE_BYTES) {
-      console.warn(`[submit] template URL ${trimmed} returned an unusable body; sending as-is`);
-      return html;
-    }
-    console.log(`[submit] resolved template URL ${trimmed} (${body.length} bytes)`);
-    return body;
-  } catch (err) {
-    console.warn(`[submit] template URL fetch failed for ${trimmed}: ${errToString(err)}; sending body as-is`);
-    return html;
-  }
-}
-
 // Deno's conn.remoteAddr is a null-prototype object ({hostname, port,
 // transport} with no toString/valueOf), so interpolating it into a string
 // throws "Cannot convert object to primitive value" — which, inside an
@@ -679,28 +669,48 @@ async function handleSubmitConn(conn: Deno.Conn): Promise<void> {
             const bodyLines: string[] = [];
             let size = 0;
             let tooBig = false;
-            for (;;) {
-              const l = await s.lines.next();
-              if (l === null || l === ".") break;
-              const un = l.startsWith("..") ? l.slice(1) : l; // de-dot-stuff
-              size += un.length + 2;
-              if (size > MAX_BODY_BYTES) tooBig = true;
-              bodyLines.push(un);
+            let term: "dot" | "eof" | "error" = "dot";
+            try {
+              for (;;) {
+                const l = await s.lines.next();
+                if (l === null) { term = "eof"; break; }
+                if (l === ".") break;
+                const un = l.startsWith("..") ? l.slice(1) : l; // de-dot-stuff
+                size += un.length + 2;
+                if (size > MAX_BODY_BYTES) tooBig = true;
+                bodyLines.push(un);
+              }
+            } catch (e) {
+              // Client hung up mid-DATA: the TLS stream rejects instead of
+              // ending cleanly. Treat as early termination, not a crash.
+              term = "error";
+            }
+            // Faithful wire reconstruction: every SMTP DATA line is
+            // CRLF-terminated on the wire, so terminate each line. A plain
+            // join("\r\n") drops the final CRLF — which is exactly the
+            // header/body separator of a bodyless (headers + blank line)
+            // message, making it unparseable (2026-10-25 production bug).
+            const rawSubmission = bodyLines.map((l) => l + "\r\n").join("");
+            void captureSubmission(s.rcpts, rawSubmission, term);
+            if (term !== "dot") {
+              // Nothing deliverable: GoTrue's net/smtp client vanished
+              // before finishing DATA. Log the partial bytes for diagnosis.
+              console.error(`[submit] DATA ended before terminator (term=${term}) lines=${bodyLines.length} bytes=${rawSubmission.length} partial=<<${rawSubmission.slice(0, 400).replace(/\r\n/g, "\\n")}>>`);
+              try {
+                await reply("451 4.3.0 Incomplete data");
+              } catch {
+                // client already gone
+              }
+              s.rcpts = [];
+              break;
             }
             if (tooBig) {
               await reply("552 5.3.4 Message too large");
               break;
             }
             try {
-              const parsed = parseSubmission(bodyLines.join("\r\n"));
+              const parsed = parseSubmission(rawSubmission);
               if ("error" in parsed) throw new Error(parsed.error);
-              const resolved = await resolveTemplateUrl(parsed.html);
-              if (resolved !== parsed.html) {
-                parsed.html = resolved;
-                // The text part was derived from the bare-URL body; re-derive
-                // it from the real document.
-                parsed.text = htmlToText(resolved) || "juneau.love — please open the HTML version of this message.";
-              }
               await sendMail({ to: s.rcpts, subject: parsed.subject, html: parsed.html, text: parsed.text });
               console.log(`[submit] delivered rcpt=${s.rcpts.join(",")} subject=${JSON.stringify(parsed.subject)}`);
               await reply("250 2.0.0 OK");

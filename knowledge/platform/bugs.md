@@ -11,89 +11,37 @@ Statuses: **OPEN** (needs a fix), **FIXED** (shipped/verified), **WATCH**
 (known limitation, accepted or mitigated). Newest first. Mail-stack details
 live in [Mail](/mail.md); this list is the cross-cutting defect log.
 
+**Static-hosting note (verified 2026-10-26):** the site is adapter-static
+with `fallback: '404.html'`, and every `ssr = false` route (register,
+login, verify, auth/confirm, …) is not prerendered — so **direct
+deeplink loads of those paths return HTTP 404** while in-app client
+navigation works. The 404.html served is a full SvelteKit app-boot
+shell, so in a real browser the SPA boots and the client router renders
+the target route (that's how the `/verify` email hop works). Curl/bots
+see 404s on those paths — expected, not a bug.
+
 ## OPEN
 
-### Email action links 404: GoTrue builds `SiteURL + /verify`, no such route (2026-10-25)
-The confirmation (and magic-link) action link is `https://juneau.love/verify?token=…&type=…&redirect_to=…` — GoTrue's default confirmation URL path resolved against `site_url`. The site had no `/verify` route, so clicking the link in a received email landed on the SPA's 404; with `mailer_autoconfirm=false` and sign-in disabled for unconfirmed emails, a guest who received the email could **never confirm and could never log in**. Discovered 2026-10-25 while fixing the template-URL bug, by tracing GoTrue v2.197.0's link construction (`emailParams.ConfirmationURL = externalURL.ResolveReference(getPath(...))`) and probing the live site.
-- The config-side fix is not available: `site_url` must stay `https://juneau.love` (the `redirect_to` rewrite — [project notes](/project.md)), and the hosted Management API's 243-key auth schema has no `mailer_url_paths_*` key (a PATCH containing them returns 200 and silently drops them — same failure class as the old `smtp_pass` drop).
-- Fix (committed, branch `relay-submit-crash`): a client-only `/verify` route that passes the query string through to `https://<ref>.supabase.co/auth/v1/verify`; GoTrue confirms the email / creates the magic-link session and 303s back to `redirect_to` with the session in the URL fragment, which supabase-js installs (probe-verified: bad token → 303 to `juneau.love/register` with an error fragment, so the `redirect_to` is accepted by GoTrue's redirect validation).
-- Status: code committed + built; pending Pages deploy (push to `main`) and a live email-click test.
-
-### Registration email delivered as a link to the template file (2026-10-25)
-The 02:14 and 02:24 UTC confirmation emails (raw headers verified from the
-owner's inbox) had **both** the `text/plain` and `text/html` parts
-containing only the string
-`https://juneau.love/email/confirmation.html` (43 bytes, no newline) —
-GoTrue rendered the template *URL* as literal text. The subject was the
-custom branded one, so GoTrue's `loadEntry` "succeeded": its
-`loadEntryBody` `fetch()` of the configured URL returned HTTP 200 with
-the URL string itself as the body, and `html/template` parsed that as a
-literal-text template. The fetched result was cached (10 min max age),
-which is why both sends in the window carried the same broken body.
-- The live URL now (and at every subsequent check) serves the real 2563-
-  byte template from GitHub Pages, and every Pages deploy in the window
-  contained the full file in-tree — the transient 200-with-URL-body is
-  not reproducible from the ground, so the GoTrue/fetch-side root cause
-  stays unexplained (candidate: transient behavior at the Pages
-domain/deploy edge — the site file re-deployed at 02:33:04 UTC, 9 min
-  after the last broken send).
-- Mitigation (defense in depth, on the side we control): the relay shim
-  now detects the degenerate case — rendered HTML body that is a bare
-  `http(s)` URL — and fetches the real document itself (10 s timeout,
-  1 MB cap, mirroring GoTrue's limits) before re-sending; any fetch
-  failure falls back to the body as given so the problem stays visible.
-  Covered by `infra/mail/test_relay_submit.py` §[4]. The relay's
-  template-URL resolution fired in production at 14:53/14:58 UTC on
-  2026-10-25 ("resolved template URL … (2541 bytes)") — the degenerate
-  fetch recurred after the fix, and the mitigation worked as designed.
-- **Second degenerate mode** (relay journal 15:43 UTC same day): the
-  fetch returned an **empty** body; the submitted message had no body
-  and the shim's parse failed ("no header/body separator") → 451 →
-  signup rolled back. Not catchable by the URL resolver (nothing to
-  resolve) — avoided entirely by the template-settings reset below.
-- **umich 451s** (14:53/14:58): the relay-reshaped branded emails were
-  temp-rejected by `mx1/mx2.a.mail.umich.edu` ("denied by local
-  policy") while the same shape was accepted at 02:14/02:24 (including
-  the 43-byte URL-body email) — consistent with the documented
-  intermittency; content (real branded HTML vs 43-byte body) is the
-  prime suspect.
-- **Decisive mitigation (applied 2026-10-25, read-back verified)**:
-  `mailer_templates_confirmation_content` and
-  `mailer_templates_magic_link_content` reset to **empty** so GoTrue
-  uses its built-in defaults with **no template fetch at all**; subjects
-  set to the defaults too. Rebrand only once the fetch flakiness is
-  understood (see [Mail](/mail.md) for the rebrand recipe).
-- Status: mitigation shipped with the crash fix (branch
-  `relay-submit-crash`); pending production deploy + a live registration
-  test to the owner's inbox.
-
-### Mail relay process crashes on any submit-session error (2026-10-25)
-The relay's `:465` GoTrue submission handler takes the whole process down
-(HTTP relay + every edge-function mail send included) whenever a session
-errors. Observed in production 2026-10-25 02:49:32 UTC:
-`Uncaught (in promise) TypeError: Cannot convert object to primitive
-value` at `handleSubmitConn`'s error handler, relay down ~5 s (systemd
-restart), in the middle of the owner's registration attempts (the 02:14
-and 02:24 UTC confirmations delivered fine; the 02:49 session produced
-nothing).
-- Root cause: in Deno 2.9.7 `conn.remoteAddr` is a **null-prototype
-  object** (no `toString`/`valueOf`), so the `${conn.remoteAddr}`
-  interpolation in the error path throws the TypeError *while handling
-  the original error* → unhandled rejection → process exit. Two sites:
-  the outer catch (`session error (${conn.remoteAddr})`) and the
-  bad-credentials log. A single `AUTH PLAIN` with wrong credentials
-  crashes the relay — an internet scanner can kill the mail path.
-  Secondary: the inner catch's `await reply("451 …")` is unguarded, so
-  a reply write to a vanished client (RST/timeout) propagates to the
-  outer catch and hits the same landmine.
-- Fix: `addrToString()` (property-based, never interpolates the raw
-  object) for all address logging; `errToString()` for error values;
-  the inner `451` reply is wrapped so a vanished client cannot escape
-  into the outer catch.
-- Repro: `infra/mail/test_relay_submit.py` (spawns the real `relay.ts`
-  against a local sink; pre-fix, the bad-AUTH session kills the process
-  with the exact production stack trace at `relay.ts:661:51`; post-fix,
-  all 28 checks pass including post-crash-trigger recovery).
+### Hosted GoTrue's template fetch never reaches the target host (2026-10-26)
+GoTrue's fetch of a configured `mailer_templates_*_content` URL returns a
+**fabricated HTTP 200** whose body is either the URL string itself or
+empty — the request never reaches the target, for VPS-hosted or
+supabase.co-hosted URLs alike (2026-10-26 controlled experiment: no
+request from any Supabase IP in the target's access log, while
+edge-function egress from the same project logged normally minutes apart).
+Because the response is a 200, GoTrue's "fall back to the built-in
+default on fetch failure" never fires: a URL-valued setting produces a
+degenerate send at random — the guest receives an email whose entire
+body is the URL string, or a bodyless message (→ relay `451` → signup
+rolled back).
+- **Rule: never put a URL in a `mailer_templates_*_content` setting** —
+  inline the raw template document. The confirmation template is inlined
+  today; see [Mail](/mail.md), Email templates.
+- Empty-string writes to the store also do not reliably propagate to the
+  running GoTrue (non-empty writes propagate <60 s).
+- Candidate for a Supabase support ticket.
+- Side note: function deploys require the Supabase CLI (eszip bundles via
+  the podman bundler; the Management API rejects raw zips).
 
 ### Supabase Management API silently drops `smtp_pass` writes (2026-10-23)
 `PATCH /v1/projects/{ref}/config/auth` returns HTTP 200 with
@@ -107,6 +55,60 @@ would break auth mail again.
   reverse). Candidate for a Supabase support ticket.
 
 ## FIXED
+
+### UMich 451 tempfails — degenerate template bodies, not shape or IP (2026-10-23 → 2026-10-26)
+umich.edu's Mimecast gateway (`mx1/mx2.a.mail.umich.edu`) temp-failed
+outbound mail with 451 "denied by local policy" in drifting windows; on
+2026-10-26 02:22–03:26 UTC every umich-bound send 451'd, which 500'd real
+registration attempts (clean rollback — "Registration didn't go
+through").
+- **Final root-cause guess (2026-10-26 bisection; full evidence in
+  `UMICH-451-DEBUG.md` in the repo root):** the 451s tracked the
+  *body*. Every 451'd send of the morning carried a degenerate body
+  produced by the fabricated template fetch (OPEN entry above) — a bare
+  template-URL string, an empty body, or, via the relay's then-live
+  rescue, the raw **unrendered** Go template with literal `{{ }}`.
+  Every bisection send carrying a fully rendered template was accepted,
+  including `:587`-direct controls from the same IP and both message
+  shapes. Message shape (single-part vs multipart, Message-ID domain)
+  and the sending IP (Spamhaus PBL-listed Choopa range; DBBL/UCE clean)
+  are exonerated. Caveat: umich's accept/reject windows drift day to
+  day, so body content is a strong association, not a proven single
+  cause.
+- **Fix:** the confirmation template is inlined in GoTrue's store config
+  (the raw document, byte-identical to `static/email/confirmation.html`)
+  — GoTrue renders natively, no fetch, so degenerate bodies can no longer
+  occur. Since the fix: every send accepted — 5/5 umich-bound
+  test/control sends plus the first real registration (15:06 UTC
+  2026-10-26, delivered to proton.me).
+- **Cleaned up afterwards:** the relay's `resolveTemplateUrl` rescue (it
+  shipped raw `{{ }}` bodies — exactly what umich rejected), the
+  `email-template` edge function, and the VPS template staging + nginx
+  location. The relay's `:465` shim stays: it is the proven production
+  path and hosts the submission capture; GoTrue's native shape was never
+  cleared by umich.
+- **Residual:** umich can still tempfail in a bad window; the register
+  page's 4× retry (10/30/60 s) is the backstop. If 451s recur on
+  *rendered* bodies, that's a hosting/IP problem, not a mail-stack one —
+  options: wait out the window, move mail to a clean datacenter IP (the
+  `infra/mail/` runbook is portable), or a transactional provider for
+  auth mail.
+- The 2026-10-25 "email delivered as a link to the template file" and
+  "bodyless email" incidents were earlier instances of the same
+  fabricated fetch (details in the git history on `relay-submit-crash`).
+
+### Maddy `:587` open relay — unauthenticated external spam submitted + relayed (2026-10-23 → 10-25)
+Maddy's public `:587` listener was a plain `smtp` endpoint (AUTH
+optional): any internet client could submit external mail and Maddy
+relayed it. 20 external submissions from spoofed senders to
+hotmail/yahoo/aol/gmail were accepted 2026-10-23 → 10-24 21:11, several
+delivered; the recipient-gateway rejections in that window name the VPS
+IP explicitly. Fixed 2026-10-25 21:51: endpoint renamed `smtp` →
+`submission` in `/etc/maddy/maddy.conf` (backup
+`/root/maddy.conf.bak-20261025`), verified from outside (unauthenticated
+`MAIL FROM` → `502 5.7.0 Please authenticate first`). The Oct 23–24 spam
+window is what associated the IP with spam; the 2026-10-26 bisection
+exonerated the IP as the 451 cause (entry above).
 
 ### Prod gallery uploads dead: hosted functions presigned against the local dev stack (2026-10-25)
 Every gallery upload by an approved guest failed with "The upload didn’t
@@ -145,6 +147,37 @@ both children of the 2026-10-24 poisoned secret batch (entry below):
   `POST /rest/v1/assets` 201 (the row is inserted only after the PUT
   succeeds) → `asset-url` 200 on gallery reload.
 
+### Mail relay process crashed on any submit-session error (2026-10-25)
+The relay's `:465` GoTrue submission handler took the whole process down
+(HTTP relay + every edge-function mail send) whenever a session errored —
+observed in production 2026-10-25 02:49:32 UTC, in the middle of
+registration attempts.
+- Root cause: in Deno 2.9.7 `conn.remoteAddr` is a **null-prototype
+  object** (no `toString`/`valueOf`), so `${conn.remoteAddr}` in the
+  error path threw *while handling the original error* → unhandled
+  rejection → process exit. A single `AUTH PLAIN` with wrong credentials
+  (an internet scanner) killed the mail path. Secondary: the inner catch's
+  `451` reply write to a vanished client was unguarded and hit the same
+  landmine.
+- Fix: `addrToString()` (never interpolates the raw object) for address
+  logging, `errToString()` for error values, and the `451` reply write is
+  guarded. Repro/regression: `infra/mail/test_relay_submit.py` (pre-fix
+  the bad-AUTH session kills the process with the exact production stack
+  trace; post-fix all checks pass including post-trigger recovery).
+
+### Email action links had no site route to land on (2026-10-25)
+GoTrue's action links carry `redirect_to=https://juneau.love/auth/
+confirm`, and a SiteURL-anchored link would have pointed at
+`https://juneau.love/verify` — a route the static site didn't have
+(deep links to `ssr = false` routes 404 at the HTTP level — the
+static-hosting note above). The production link observed 2026-10-26
+points directly at the hosted GoTrue verify endpoint
+(`https://<ref>.supabase.co/auth/v1/verify`) and 303s to
+`redirect_to` with the session in the fragment; the client-only
+`/verify` route (`src/routes/verify/`, probe-verified 2026-10-26) is the
+hop for SiteURL-anchored links — it passes the query string through to
+the same endpoint. Flow: [Client authentication](../api/client-auth.md).
+
 ### Orphaned `auth.users` row deadlocked register/sign-in (2026-10-25)
 Manual cleanup during the 2026-10-24 UMich debugging deleted the test
 `lacharit@umich.edu` guest's `public.users` row but left its
@@ -178,7 +211,7 @@ links (`?approve=<id>` / `?reject=<id>` and the list link in the
 links in the first real admin alert opened localhost and were unusable.
 The same batch also set `S3_ENDPOINT` / `S3_PATH_PREFIX` / `S3_REGION` —
 keys that exist only in the local `config.toml` — and re-stamped
-`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (secret values are unreadable).
+`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (secret values unreadable).
 - Root cause: environment-derived **non-secret** topology (site URL,
   local-stack S3 settings) was overridable per environment via function
   secrets, so a stale local write silently wins over the prod code default.
@@ -212,38 +245,20 @@ keys that exist only in the local `config.toml` — and re-stamped
   pair live; the rest built-in `SUPABASE_*`).
 
 ### Registration confirmation email is unbranded (2026-10-24)
-A guest's first email is GoTrue's default confirmation template — plain
-and unstyled — while the site's own emails (login link, registration
-alert) are branded with a proper button. The register page's
-"already registered" probe emails the returning guest GoTrue's own
-magiclink email — unbranded the same way.
-- Root cause: in GoTrue (v2.197.0, latest tag) the template content
-  setting (`mailer_templates_*_content`) is a **URL** the running GoTrue
-  GETs (relative = against `SiteURL`), parsed with Go's `html/template`,
-  cached 10 minutes — not inline HTML. The project held the default
-  template's inline HTML in the setting; that is a malformed URL, so the
-  fetch failed and GoTrue **silently fell back to the built-in default**.
-  The stored "template" was dead config that could never apply, and the
-  fallback never errors.
-- Fix: the branded templates are static pages on the site —
-  `static/email/confirmation.html` and `static/email/magic-link.html`
-  (same design as the edge-function emails in `supabase/functions/_shared`)
-  — and the project settings point at them: `mailer_templates_confirmation_content`
-  = `https://juneau.love/email/confirmation.html`,
-  `mailer_templates_magic_link_content` =
-  `https://juneau.love/email/magic-link.html`, with subjects
-  `mailer_subjects_confirmation` = "Confirm your juneau.love email" and
-  `mailer_subjects_magic_link` = "Your juneau.love sign-in link". Applied
-  via the Management API, read-back verified.
-- Verified (2026-10-24): both templates parse and render under Go's
-  `html/template` with the real variable set (including nil / absent
-  `Data.display_name`); the Management API read-back matches. Final check:
-  a real test signup → branded confirmation email in the inbox (owner —
-  the only check that can't be run without a real mailbox). The silent
-  fallback means a broken template URL never breaks auth, only the
-  branding — so a future redesign must verify with a send, not by
-  reading the config back.
-- Mechanism details: [Mail](/mail.md), Email templates.
+The guest's first email was GoTrue's default confirmation template —
+plain and unstyled — while the site's own emails are branded.
+- Root cause: the project held the default template's inline HTML in the
+  `mailer_templates_confirmation_content` setting (a malformed URL value
+  at the time — see the fabricated-fetch OPEN entry) and GoTrue silently
+  fell back to the built-in default; the fallback never errors.
+- Final state (2026-10-26): the branded confirmation template is
+  **inlined** in the store config (canonical file
+  `static/email/confirmation.html`, byte-identical to the store); the
+  magic-link template is still the built-in default (only its subject is
+  branded). Rebrand recipe: [Mail](/mail.md), Email templates.
+- Lesson: a broken template never breaks auth, only the branding —
+  verify any template change with a real send, not by reading the config
+  back.
 
 ### Function mail secrets missing on the hosted project (2026-10-24)
 `send-login-link` and `notify-registration` ran in **dev mode** on the
@@ -262,60 +277,75 @@ once-per-registration admin alert were silently consumed by log-only sends.
 
 ## WATCH
 
-### UMich intermittently 451s auth mail — "denied by local policy" (2026-10-24)
-Registration for a `umich.edu` address can fail with
-"Registration didn’t go through (Error sending confirmation email)": on the
-signup path, GoTrue's `POST /otp` returns the SMTP failure **synchronously**
-(`MagicLink` → `Signup` sends the confirmation email inside the user-creation
-transaction; a send failure 500s *and rolls the user row back*) — unlike the
-magiclink-to-existing-user path, which still 200s (the 2026-10-23
-invisible-failure mode).
-- Trace (Maddy journal): authenticated hand-off clean
-  (`username: notify@juneau.love`), `RCPT ok`, then
-  `DATA error 451 "Message Tempfailed: denied by local policy"` from
-  mx1/mx2.a.mail.umich.edu (Mimecast). The SMTP password is **not** involved —
-  gmail / proton.me / yopmail deliveries from the same Maddy were all
-  accepted, and umich itself accepted the same sender→recipient pair the
-  same morning (06:09, the DKIM-fix verification send).
-- Interleave: 10-23 23:03 451 → 10-24 06:09 accepted → 15:55 451 ×2 →
-  16:20 relay test to the same address **accepted** → 16:27 451 ×2 →
-  16:40 relay test carrying GoTrue's exact subject + rendered body
-  **accepted** — inside the very window GoTrue's own sends were 451'd.
-  Sender-side auth is intact (SPF, DKIM TXT vs on-disk key byte-for-byte,
-  DMARC, PTR all verified 2026-10-24); Maddy's queue stays empty (451 is
-  returned to GoTrue, never retried).
-- Message-shape effect: GoTrue-formatted mail (single-part `text/html`,
-  Message-ID `@<ref>.supabase.co` — `internal/mailer/mailmeclient` does
-  `gomail.NewMessage` + `SetBody("text/html", …)`, no plain part) went
-  1/6 to umich, while multipart text+html mail from the same IP/SPF/DKIM
-  went 2/2, both umich accepts inside the GoTrue-451 window. umich's
-  gateway scores GoTrue's message shape borderline for this
-  Choopa-residential IP and tempfails it intermittently; neither the MIME
-  shape nor the Message-ID domain is configurable in hosted GoTrue (its
-  mailer pins `gomail v2`), so the shape is changed **after** GoTrue sends
-  — by the relay's `:465` GoTrue submission shim (below).
-- Mitigation (deployed 2026-10-25; first production send pending): GoTrue now points
-  at the relay's `:465` shim (Supabase `smtp_port: "465"` set + project
-  restarted), which re-sends the mail through `sendMail()` in the
-  accepted shape (multipart, `Message-ID @juneau.love`, real text part).
-  Verified locally end-to-end against the exact gomail handshake (465
-  implicit TLS + `AUTH PLAIN`, per the pinned commit's `SSL: port == 465`)
-  before deploy: 250 path delivers the rewritten mail, a 451 from Maddy's
-  side comes back to GoTrue as 451 → 500 → clean rollback. Deploy notes:
-  the shim's bind of privileged 465 needs
-  `AmbientCapabilities=CAP_NET_BIND_SERVICE` on the unit (a bare
-  `PermissionDenied: … (os error 13)` without a file path at startup =
-  the bind, not the cert read). The register page's 500-retry (4
-  attempts, 10/30/60 s) is the backstop if a tempfail window still
-  outlasts it. Rollback: `smtp_port: "587"` + project restart. Design and
-  runbook: `knowledge/platform/mail.md` (shim section),
-  `infra/mail/README.md` §6a/6b.
-- If umich starts 451ing the **relay-shaped** mail too (check
-  `journalctl -u mail-relay` for `[submit] delivery … failed`),
-  sender reputation is the suspect — that is a hosting/IP problem, not a
-  mail-stack one.
-- Not confused with: the 2026-10-24 corrupt-DKIM incident (FIXED, same
-  451 signature — verify DNS first if it recurs).
+### Duplicate confirmation email when the remote MX is slow (2026-10-26)
+A guest who registers receives **two** confirmation emails ~10 s apart —
+the first with a **dead token** (click → invalid/expired), the second the
+working one. Observed twice 2026-10-26: the first real registration
+(15:06 UTC, proton.me) and a repeat test (16:57 UTC, same recipient).
+- Chain: GoTrue sends the confirmation email **synchronously** inside the
+  signup transaction, and the relay's `:465` shim only answers 250 after
+  the **remote MX** accepts DATA — Maddy's `:25` handoff is synchronous
+  `deliver_to remote` (no queue). A slow MX (proton ~10 s) outlives the
+  supabase.co stack's patience: the browser gets a 500 ~1 s into the
+  request while the send is still in flight, GoTrue rolls the signup back
+  (user row + token die), yet the mail still arrives. The register
+  page's 10 s retry ([Client authentication](../api/client-auth.md), Flow 1)
+  then creates a fresh signup with a fresh token → the second email.
+- The relay is not duplicating: `captureSubmission` is a write-only
+  diagnostic (`/var/lib/mail-relay/captures/`) that never feeds back into
+  the send path. 16:57 evidence: exactly one `delivered` per `captured`,
+  and the two captures are two distinct GoTrue submissions with different
+  tokens (`620b33df…` vs `793fcd50…`).
+- Not a client-timeout fix: the client has no timeout to raise (no
+  `AbortController` in `src/` — fetch waits indefinitely). Back-computed
+  from the db: attempt 2's `users` row `created_at 16:57:33.99` minus the
+  10 s retry delay ⇒ attempt 1's 500 landed ≈ 16:57:23.9, seconds after
+  the send started. The server gave up first.
+- Not fixable on the Maddy side: queuing on `:25` would let GoTrue get
+  its 250 instantly, but it would also swallow the umich-451 → 500 →
+  client retry backstop (a 451 would surface asynchronously — signup
+  commits with no mail, and the guest waits on Maddy's retry schedule;
+  see the UMich WATCH entry below).
+- Data integrity held: exactly one `users` row (from the surviving
+  attempt), email confirmed with the second token; `notify-registration`
+  is idempotent via `admin_notified_at`. The cost is one dead token in
+  the inbox.
+- Open diagnostic (dashboard only — owner): the GoTrue/Auth logs around
+  16:57:24 UTC show why the supabase.co stack 500'd the slow send that
+  fast (proxy vs GoTrue's own SMTP timeout). If it is a GoTrue SMTP
+  timeout, the project's SMTP setting may have a knob to raise — the
+  only fix that yields a single email.
+- Candidate hardening (not for this case): a pre-retry
+  `shouldCreateUser: false` probe would catch the *opposite* race (attempt
+  1 committed but the client saw a 500). Here attempt 1 rolled back, so
+  the probe 422s and the retry proceeds anyway. Caveat: the probe has a
+  link-sending side effect for known emails
+  ([Client authentication](../api/client-auth.md), Flow 1).
+- Accepted for now: it requires a remote MX slow enough to outlive the
+  proxy, and a working token always arrives within the 4 attempts.
+
+### UMich can still tempfail — keep an eye on it (2026-10-24)
+umich.edu's gateway temp-fails in drifting windows (accept/reject days
+interleave even for the same sender→recipient). Since the 2026-10-26
+inlined-template fix, every send has been accepted; before it, the
+tempfails killed registration attempts.
+- Semantics if it happens: on the signup path GoTrue sends the
+  confirmation email **synchronously** inside the user-creation
+  transaction — a send failure 500s the `POST /otp` **and rolls the user
+  row back** (nothing half-exists); the magiclink-to-existing-user path
+  still 200s (invisible failure). The register page's 4× retry
+  (10/30/60 s) is the backstop.
+- Diagnose: `journalctl -u maddy` — `DATA error 451 "denied by local
+  policy"` from mx1/mx2.a.mail.umich.edu (Mimecast), after a clean
+  `RCPT ok`; Maddy's queue stays empty (451 is returned, never retried).
+  The relay logs `[submit] delivery … failed` for the same event.
+- If it recurs on **rendered** bodies (check the
+  `/var/lib/mail-relay/captures/` file for the body), sender
+  reputation/IP is the suspect — a hosting problem: wait out the window,
+  move to a clean datacenter IP, or a transactional provider (see the
+  FIXED entry above for the options). Don't confuse with the
+  2026-10-24 corrupt-DKIM incident (same 451 signature — verify the DNS
+  record first if it recurs).
 
 ### DKIM TXT published corrupt → umich 451 "denied by local policy" (2026-10-24)
 The published `mail._domainkey.juneau.love` contained stray spaces inside

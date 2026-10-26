@@ -95,8 +95,8 @@ command (see [project notes](/project.md), Deploy).
   `juneau.love`, autoconfirm **off**, external email **on**. The command
   is in `infra/mail/README.md`. Port 587 (Maddy directly) is the
   rollback path.
-- GoTrue email templates: two `mailer_templates_*_content` URL settings
-  plus subjects — see [Email templates](#email-templates-gotrue) below.
+- GoTrue email templates: an **inline** template document plus subjects —
+  see [Email templates](#email-templates-gotrue) below.
 
 ## GoTrue submission shim (relay `:465`, added 2026-10-24)
 
@@ -142,15 +142,14 @@ Deno 2.9.7 (no `toString`/`valueOf`), so it is only ever printed through
 production crash — one bad AUTH killed the relay for ~5 s; see
 [bugs.md](/bugs.md)).
 
-**Template-URL fallback** — GoTrue's `mailer_templates_*_content`
-settings are URLs it GETs and parses as Go `html/template`; in
-production (2026-10-25) the fetch once came back with the URL string
-itself as the body, so the guest's email contained only the link to the
-template file. The shim detects that degenerate case — a rendered HTML
-body that is a bare `http(s)` URL — and fetches the real document itself
-(10 s timeout, 1 MB cap, mirroring GoTrue's), re-deriving the text part;
-any fetch failure falls back to the body as given. Covered by
-`infra/mail/test_relay_submit.py` §[4].
+**No template fallback** — since 2026-10-26 the confirmation template
+is inlined in GoTrue's config (see [Email templates](#email-templates-gotrue)
+below), so GoTrue always submits a rendered body. If it ever submitted a
+degenerate one again (no usable body part, or a bare URL instead of the
+body), the relay has no recovery path by design: unparseable → `451` →
+GoTrue 500s the signup → the whole signup rolls back → the register
+page's retry. A problem stays visible instead of silently shipping a
+broken email.
 
 **Rollback** — `PATCH smtp_port: "587"` + project restart restores the
 pre-2026-10-24 direct-to-Maddy path (the `:587` listener stays up).
@@ -164,71 +163,54 @@ the register page's "already registered" probe triggers for a known
 email (the only path that uses the magiclink template) — are templated
 by project settings, not by site code:
 
-- The template **content** setting (`mailer_templates_*_content`) is a
-  **URL**, not inline HTML (GoTrue v2.197.0, verified in source): the
-  running GoTrue GETs it (relative values resolve against `SiteURL`),
-  parses the result with Go's `html/template`, and caches it for
-  10 minutes. The template **subject** settings (`mailer_subjects_*`)
-  are inline template strings.
-- **A fetch or parse failure silently falls back to the built-in
-  default template** — the email still goes out, just unbranded, with
-  no error anywhere. That is how the project shipped with the default
-  confirmation email while a (dead) inline-HTML "template" sat in the
-  setting (2026-10-24 — [bug list](/bugs.md)). Reading the setting back
-  is not a valid check that the template is live; verify with a real
-  send.
-- **A *successful* fetch can still degenerate** (2026-10-25, verified
-  twice). Mode 1 (raw email): the GET returned HTTP 200 with the URL
-  string itself as the body, so GoTrue parsed the URL as a literal-text
-  template and the guest received an email whose entire content was the
-  link to the template file; the relay shim catches that shape and
-  fetches the real document itself — see the shim section's template-URL
-  fallback. Mode 2 (relay journal 15:43, after three mode-1 sends the
-  same day): the GET returned an **empty** body, so the submitted
-  message had no body at all and the shim's parse failed ("no header/
-  body separator") → 451 → the whole signup rolled back. Both modes
-  come from Supabase's egress to the template host, not from our code
-  (plain `curl` from elsewhere gets the real file). While the hosted
-  template URL can't be trusted, keep the template settings empty —
-  GoTrue then uses its built-in default with no fetch at all.
-- The rendered body is sent as `text/html`, with no plain-text part.
+- **Template content is inlined, not a URL.**
+  `mailer_templates_confirmation_content` holds the raw Go
+  `html/template` document — byte-identical to the canonical repo file
+  `static/email/confirmation.html` (verified 2026-10-26). GoTrue parses
+  it and renders it natively at send time: no fetch, no function, no VPS
+  copy. The **subject** settings (`mailer_subjects_*`) are inline
+  template strings. The magic-link template is **empty** (built-in
+default; only its subject is branded) — login links are unbranded.
+- **Never put a URL in a `mailer_templates_*_content` setting.** Hosted
+  GoTrue's template fetch never reaches the target host — the GET
+  "succeeds" with a fabricated body: either the URL string itself (the
+  guest receives an email whose entire content is that link) or empty
+  (bodyless message → relay `451` → signup rolled back), at random. This
+  holds even for a public supabase.co function URL on the same project
+  (2026-10-26 controlled experiment — [bug list](/bugs.md)). Inline
+  documents are the only reliable value, and the built-in-default
+  fallback never fires because the fabricated response is a 200, not a
+  failure.
+- A **parse** failure silently falls back to the built-in default
+  template — the email still goes out, just unbranded, with no error
+  anywhere. Reading the setting back is not a valid check that the
+  template is live; verify with a real send.
+- The rendered body is sent as `text/html`, with no plain-text part (the
+  relay's :465 shim derives one — see the shim section above).
 - Confirmation/magiclink template variables: `.ConfirmationURL` (the
   action link — both types use this name), `.Email`, `.Token`,
   `.TokenHash`, `.Data` (user metadata — the registration's
   `display_name`; may be nil, guard with nested `with` actions),
-  `.RedirectTo`, `.SiteURL`.
-- The templates are repo files served by the site: `static/email/`
-  (copied verbatim into the build). Their HTML comments must not
-  contain `{{ }}` — template actions inside comments break the parse
-  and trip the silent fallback. To rebrand: re-PATCH
-  `mailer_templates_confirmation_content` =
-  `https://juneau.love/email/confirmation.html`,
-  `mailer_templates_magic_link_content` =
-  `https://juneau.love/email/magic-link.html`, subjects
-  `mailer_subjects_confirmation` = "Confirm your juneau.love email",
-  `mailer_subjects_magic_link` = "Your juneau.love sign-in link" —
-  then **read the values back** (Management API drops writes silently)
-  and verify with a real send. As of 2026-10-25 the settings were reset
-  to empty (built-in defaults) for exactly the flaky-fetch reason above.
-- **Action links: the `/verify` hop.** GoTrue builds the action link as
-  `SiteURL + URLPaths.Confirmation` (default path `/verify`) with
-  `?token=…&type=…&redirect_to=…`. `site_url` must stay
-  `https://juneau.love` (the `redirect_to` rewrite —
-  [project notes](/project.md)), and the hosted Management API does not
-  expose `mailer_url_paths_*` at all (243-key schema, no such key; a
-  PATCH containing them returns 200 and drops them), so the link can't
-  be pointed at `supabase.co` by config. Instead the site serves a
-  client-only `/verify` route (`src/routes/verify/`) that passes the
-  query string straight through to
-  `https://<ref>.supabase.co/auth/v1/verify`; GoTrue confirms the email
-  (or creates the magic-link session) and 303s back to `redirect_to`
-  (the referrer — the register page) with the session in the URL
-  fragment. supabase-js's `detectSessionInUrl` installs it; a pending
-  signed-in user is routed to the awaiting-approval screen by the root
-  layout, and `/auth/confirm` handles the same fragment. Probe-verified
-  2026-10-25: bad token → 303 to `https://juneau.love/register` with an
-  error fragment, so the `redirect_to` value is accepted by GoTrue's
-  redirect validation.
+  `.RedirectTo`, `.SiteURL`. HTML comments must not contain `{{ }}`
+  (template actions inside comments break the parse).
+- **To rebrand**: edit `static/email/confirmation.html` → PATCH the new
+  document content into `mailer_templates_confirmation_content`
+  (Management API `PATCH /projects/{ref}/config/auth`) → read it back →
+  verify with a real send (the register page, or a
+  [sendtest](#sending-a-reference-registration-email-without-gotrue-sendtest)
+  reference email to a test inbox). Same procedure for the magic-link
+  template if login links ever get branded.
+- **Action links.** The link in production (observed in the 2026-10-26
+  capture of a real signup) points directly at the hosted GoTrue verify
+  endpoint (`https://<ref>.supabase.co/auth/v1/verify?token=…&type=…&
+  redirect_to=…`) and 303s back to `redirect_to` with the session in the
+  URL fragment. The site's client-only `/verify` route
+  (`src/routes/verify/`) is the hop for SiteURL-anchored links: it passes
+  the query string through to that same endpoint. `site_url` must stay
+  `https://juneau.love` (the `redirect_to` rewrite — [project
+  notes](/project.md)), and the hosted Management API exposes no
+  `mailer_url_paths_*` keys to redirect the link by config (243-key
+  schema; a PATCH containing them returns 200 and silently drops them).
 
 ## Local development
 
@@ -238,6 +220,29 @@ sent; `registration-decision` reports `email_sent: false`). GoTrue's
 local stack uses Supabase's local SMTP (loopback) and, with local
 autoconfirm on, never sends confirmation mail — see [project
 notes](/project.md), Local development.
+
+## Sending a reference registration email without GoTrue (`sendtest`)
+
+To test the branded templates end to end — or to put a genuinely working
+registration link into a test inbox — `infra/mail/sendtest` (Go, its own
+module like `probe/`) renders the template exactly as GoTrue v2.197.0
+does (template fetch limits, `html/template` escaping, `getPath`
+Sprintf link order, `ConfirmationMail` data map) and POSTs the result to
+the relay's `/send`, so it goes out in the relay shape. It is the
+**target output** for the relay work: whatever shape a real GoTrue send
+should take after the shim, `sendtest` produces it directly.
+
+- Full usage + verification checklist:
+  `infra/mail/README.md`, section 6c.
+- `-token` defaults to a random 64-hex value: right link shape, confirms
+  nothing (the `/verify` hop and `redirect_to` validation still get
+  exercised). Pass a token captured from a real GoTrue send to make the
+  link genuinely confirm an account.
+- The text part is a byte-identical port of the shim's `htmlToText()`
+  (verified by diff against the JS implementation).
+- First successful run 2026-10-25 20:44 UTC: branded confirmation email
+  to `adlacharite@gmail.com`, Maddy accepted, queue empty = handed to
+  the gmail MX (inbox receipt to be confirmed by the owner).
 
 ## Rotating the Maddy submission password (GoTrue)
 
@@ -349,9 +354,25 @@ password (clear and SHA-256), MAIL FROM / RCPT, and the complete message
 
 - Logs: `journalctl -u maddy` (delivery/bounces), `-u mail-relay` (one
   line per accepted send), `-u nginx` (TLS / relay front).
+- **Submission capture is ON in production** (deployed with commit
+  92e7ebb, 2026-10-25): every `:465` submission writes the raw SMTP
+  transcript (headers + full body) to
+  `/var/lib/mail-relay/captures/` (`SMTP_SUBMIT_CAPTURE_DIR`), mode 0600,
+  owned by `mailrelay` — `sudo ls` / `sudo cat`. Filenames are
+  `<ISO-timestamp>-<seq>.eml`. The unit has `--allow-read` and
+  `--allow-write` for the dir (fixed 2026-10-26 — before that the
+  capture/prune threw `NotCapable` and the log line never printed), and
+  the deployed relay reconstructs captures CRLF-faithfully, so an empty
+  body is visible as a trailing blank line (the relay's parse error for
+  that shape is "no usable body part"). The capture also records
+  whether the client ended the session before/after DATA (the
+  early-DATA-termination discriminator from knowledge/platform/bugs.md).
+  Newest captures first; pruned to the 20 most recent.
 - The VPS needs **outbound** TCP 25 (provider-dependent — GCP blocks it;
   Hetzner-style unblock requests exist). Inbound 25 is never public
-  (Maddy's listener is loopback-only).
+  (Maddy's listener is loopback-only). Inbound 587 is public but, since
+  2026-10-25, a `submission` endpoint — unauthenticated external
+  submissions are rejected (it was an open relay on Oct 23–24; bug list).
 - Bounces are logged, not delivered (no mailboxes).
 - Cert renewal: certbot's timer renews `mail.juneau.love` automatically
   (webroot via nginx); no restart needed on either side.

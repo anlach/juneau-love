@@ -66,20 +66,19 @@ createClient(url, anonKey, {
   on by default in GoTrue — there is no dashboard toggle to check;
   [project notes](../platform/project.md).)
 - Email confirmation is **enabled** (project setting) → GoTrue emails a
-  "confirm your email" link — sent via the project's SMTP. The link is
-  `SiteURL + /verify?token=…&type=…&redirect_to=…` (GoTrue's default
-  URL path, which the hosted Management API can't override — no
-  `mailer_url_paths_*` keys in its schema); the site's client-only
-  `/verify` route hops it to `https://<ref>.supabase.co/auth/v1/verify`,
-  which confirms the email and 303s back to `redirect_to` with the
-  session in the URL fragment — installed by
+  "confirm your email" link — sent via the project's SMTP. The link
+  (observed in production 2026-10-26) points directly at the hosted
+  GoTrue verify endpoint
+  (`https://<ref>.supabase.co/auth/v1/verify?token=…&type=…&redirect_to=…`);
+  the site's client-only `/verify` route exists as the hop for
+  SiteURL-anchored links (it passes the query string through to that
+  same endpoint). Either way GoTrue confirms the email and 303s back to
+  `redirect_to` with the session in the URL fragment — installed by
   `detectSessionInUrl`, then routed (pending user → awaiting-approval
-  screen). Before 2026-10-25 the hop route didn't exist and the link
-  404'd ([bug list](../platform/bugs.md)). **No session is created
-  yet** at send time; the FE shows a session-independent "check your
-  email to confirm your address" screen. (Locally, autoconfirm is on,
-  so the account starts confirmed and the email is already a
-  session-granting magiclink — [project
+  screen). **No session is created yet** at send time; the FE shows a
+  session-independent "check your email to confirm your address" screen.
+  (Locally, autoconfirm is on, so the account starts confirmed and the
+  email is already a session-granting magiclink — [project
   notes](../platform/project.md).)
 - Backend side effect: the `auth.users` trigger creates the
   [users](../db/users.md) row in `pending`, unconfirmed.
@@ -89,8 +88,9 @@ createClient(url, anonKey, {
   email form; a rejected account gets its rejection screen after signing
   in and cannot re-register). Side effect: the probe emails the returning
   guest a fresh login link — what [Flow 3](#flow-3--request-a-link) does,
-  minus the cooldown. That email is GoTrue's own magiclink email, branded
-  via the site-served template ([Mail](../platform/mail.md),
+  minus the cooldown. That email is GoTrue's own magiclink email —
+  currently the built-in default template, only the subject branded
+  (`mailer_templates_magic_link_content` is empty; see [Mail](../platform/mail.md),
   Email templates).
 - A **500** on the signup call means GoTrue's confirmation email failed
   *synchronously* (recipient gateway temp-reject; the whole signup —
