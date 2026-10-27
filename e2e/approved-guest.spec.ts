@@ -9,7 +9,11 @@ import {
 	deleteAuthUser,
 	deleteAssetsForUser,
 	getUserRow,
-	setUserStatus
+	setUserStatus,
+	REST_URL,
+	anonKey,
+	getAccessToken,
+	waitFor
 } from './helpers';
 
 const created: string[] = [];
@@ -126,6 +130,61 @@ test.describe('approved guest', () => {
 			const row = await getUserRow(GUEST_EMAIL);
 			if (row) await deleteAssetsForUser(row.id);
 		}
+	});
+});
+
+/** A confirmed + approved guest (both gates), for direct-DB tests. */
+async function makeApprovedUser(name: string): Promise<string> {
+	const email = await createUnconfirmedUser(name);
+	created.push(email);
+	await confirmEmail(email); // gate 1 (email verification)
+	await setUserStatus(email, 'approved'); // gate 2 (admin approval)
+	return email;
+}
+
+test.describe('guest_names view backstop', () => {
+	/**
+	 * The view is a SECURITY DEFINER read window over `users`, and the
+	 * project's default privileges hand client roles full DML on it. DML
+	 * through a definer view runs with the owner's privileges, bypassing
+	 * `users` RLS — and `users` has no delete guard. The view must stay
+	 * read-only for client roles: the DELETE below must 403 and the
+	 * victim must survive (knowledge/platform/bugs.md, 2026-10-26 entry).
+	 */
+	test('an approved guest cannot delete another user through guest_names', async ({
+		page
+	}) => {
+		// Both approved: the victim's row is in the view, and the attacker
+		// passes the view's is_approved() caller gate.
+		const victimEmail = await makeApprovedUser('Victor Vanished');
+		const attackerEmail = await makeApprovedUser('Attacker Adele');
+		const victim = await getUserRow(victimEmail);
+		expect(victim?.status).toBe('approved');
+
+		// The attacker signs in through the real magic-link flow, then
+		// replays their own session against the Data API directly.
+		await openAuthLink(page, attackerEmail, 'magiclink');
+		await expect(page).toHaveURL('/');
+		const token = await waitFor(() => getAccessToken(page));
+		const headers = { apikey: anonKey(), Authorization: `Bearer ${token}` };
+
+		// The feature works: the attacker can read the victim's name.
+		const get = await fetch(
+			`${REST_URL}/guest_names?id=eq.${victim!.id}&select=display_name`,
+			{ headers }
+		);
+		expect(get.status).toBe(200);
+		expect(await get.json()).toEqual([{ display_name: 'Victor Vanished' }]);
+
+		// The attack: DELETE straight through the view.
+		const del = await fetch(`${REST_URL}/guest_names?id=eq.${victim!.id}`, {
+			method: 'DELETE',
+			headers
+		});
+		expect(del.status).toBe(403);
+
+		// The victim's account is intact.
+		expect((await getUserRow(victimEmail))?.id).toBe(victim!.id);
 	});
 });
 

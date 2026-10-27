@@ -22,6 +22,10 @@ see 404s on those paths — expected, not a bug.
 
 ## OPEN
 
+### Approved guest can delete any approved user through the `guest_names` view (2026-10-26)
+The `public.guest_names` view is `SECURITY DEFINER` (`security_invoker = off`; required — it must escape `users`' own-row RLS for the gallery name join, [assets](../db/assets.md)). Supabase's hosted project sets **default privileges granting full table DML** (`arwdDxtm`) to `anon`, `authenticated`, and `service_role` on `public` objects, so the migration's explicit `grant select` adds to — not replaces — that grant surface. The view is auto-updatable, and DML through a definer view runs with the **owner's** privileges (bypassing `users` RLS) while triggers see `current_user` as the calling role. `guard_user_row` is `before insert or update` only, and `users` has no DELETE policy, so the unguarded path is DELETE: an approved guest can `delete from public.guest_names where id = <any approved user>` (e.g. `DELETE /rest/v1/guest_names?id=eq.…` with their own session) — the victim's `users` row is deleted **and cascades to `assets`** (account + all their images gone). Cross-row UPDATE is blocked (guard's catch-all deny), INSERT is blocked (NOT NULL `email` + view CHECK OPTION). Verified on the local stack (identical schema) 2026-10-26; the linked project holds the same grants and trigger shape.
+- Planned fix: pin the view read-only for client roles (`revoke all … from anon, authenticated; grant select … to authenticated`) plus a `before delete` guard on `users` as backstop (branch `guest-names-read-only`).
+
 ### Hosted GoTrue's template fetch never reaches the target host (2026-10-26)
 GoTrue's fetch of a configured `mailer_templates_*_content` URL returns a
 **fabricated HTTP 200** whose body is either the URL string itself or
