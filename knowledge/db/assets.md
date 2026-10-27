@@ -1,9 +1,11 @@
 ---
 type: db-table
 title: assets
-description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
+description: "Metadata for images stored in a private external S3 bucket — one row per image (original + client-generated thumbnail); admin-seeded or guest-uploaded. The bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
+verified:
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
 ---
 
 # assets
@@ -20,6 +22,32 @@ row, and the
 for rows the caller can read. The bucket itself is not enumerable by
 clients, and its keys are random.
 
+# Why client-side thumbnails
+
+The gallery grid shows a **client-generated WebP thumbnail** and
+serves the full-size original on demand ([guest
+gallery](../stories/guest-gallery.md)). On-the-fly transforms were
+ruled out by investigation (verified against the live docs,
+2026-10-27):
+
+- **Supabase image transformations only transform objects stored in
+  Supabase Storage.** They are a component inside the Storage service
+  (imgproxy); the render endpoints are pinned to
+  `<project>.supabase.co/storage/v1/render/...` and there is no mode
+  that targets an external S3 bucket. They are also gated to the Pro
+  plan and up (free tier: not included).
+- **Hippius S3 has no transform/resize API** (full compatibility
+  matrix checked). Its CDN product caches objects near visitors but
+  does not resize, and a zone over a private bucket makes every object
+  under its prefix publicly readable — incompatible with this
+  bucket's private, presigned-only model
+  ([Supabase project](../platform/project.md#assets-s3-hippius-local-stack)).
+
+So the thumbnail is a derived object the client creates at upload
+(original and thumbnail uploaded as two objects, both keys in this
+table), with a one-off admin backfill for the seeded photos. Thumbnail
+objects live in the same private bucket under a `thumbs/` key prefix.
+
 # Schema
 
 | Column | Type | Description |
@@ -27,6 +55,7 @@ clients, and its keys are random.
 | `id` | `uuid` PK | `default gen_random_uuid()`. |
 | `user_id` | `uuid` NOT NULL | `references users(id) on delete cascade`. Uploader/owner; for admin-seeded images the admin's own `users.id`. The gallery shows the uploader's display name via this join. |
 | `s3_key` | `text` NOT NULL UNIQUE | Object key in the private bucket, e.g. `uploads/<user_id>/<uuid>`. Random and unguessable; this table is the only place keys are listed. |
+| `thumb_s3_key` | `text` UNIQUE | Object key of the client-generated WebP thumbnail, e.g. `thumbs/<user_id>/<uuid>.webp`. Nullable: rows created before the backfill carry NULL until it runs, and the gallery falls back to the full-size URL for them. |
 | `content_type` | `text` NOT NULL | `image/jpeg`, `image/png`, or `image/webp` (CHECK). Must match the S3 object's `Content-Type` so presigned GETs serve the right type. |
 | `byte_size` | `bigint` NOT NULL | Object size in bytes; checked against the upload limit before a PUT is signed. |
 | `caption` | `text` | Optional; shown under the image in the gallery. |
@@ -39,6 +68,7 @@ create table public.assets (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users (id) on delete cascade,
   s3_key text not null unique,
+  thumb_s3_key text unique,
   content_type text not null
     check (content_type in ('image/jpeg', 'image/png', 'image/webp')),
   byte_size bigint not null check (byte_size > 0),
@@ -95,7 +125,10 @@ out of the result even for approved callers.
   S3 bucket with their own S3 tooling, then inserts the rows in the
   Supabase SQL editor with `user_id` = the admin's `users.id`. The
   console is the project owner, so the insert bypasses RLS — the same
-  accepted convention as [users](/users.md) bootstrap.
+  accepted convention as [users](/users.md) bootstrap. **Thumbnail
+  backfill** is the same convention, one-off: generate each seeded
+  photo's thumbnail, upload it under `thumbs/…`, and set
+  `thumb_s3_key` on the row.
 - **Gallery read:** any approved guest `select`s all rows ordered
   `created_at desc`, then fetches the uploaders' display names from
   the [`guest_names`](/assets.md) view in a second batched query
@@ -109,11 +142,13 @@ out of the result even for approved callers.
   [users](/users.md) admin-read policy.
 - **Getting image bytes:** the FE never constructs S3 URLs. It passes
   the asset ids it can see to [asset-url](../api/asset-url.md) in one
-  batched call and renders the returned presigned GET URLs (15-minute
-  TTL) as `<img src>`, caching them client-side until near expiry.
+  batched call and renders the returned presigned **thumbnail** URLs
+  (15-minute TTL) as `<img src>`, caching them client-side until near
+  expiry; the full-size URL from the same call is used only on demand.
 - **Guest upload:** [asset-upload-url](../api/asset-upload-url.md)
-  chooses the key server-side and returns a presigned PUT; the browser
-  uploads the bytes, then the client inserts the row via PostgREST
+  chooses both keys server-side (original and thumbnail) and returns
+  presigned PUTs for each; the browser generates the thumbnail first,
+  uploads both bytes, then the client inserts the row via PostgREST
   (INSERT policy below).
 - **No client UPDATE/DELETE in v1:** removal is out-of-band (see [guest
   gallery](../stories/guest-gallery.md)).

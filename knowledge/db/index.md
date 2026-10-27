@@ -4,5 +4,5 @@
 
 # db-table
 
-* [assets](assets.md) - Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row.
+* [assets](assets.md) - Metadata for images stored in a private external S3 bucket — one row per image (original + client-generated thumbnail); admin-seeded or guest-uploaded. The bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row.
 * [users](users.md) - One row per registered site user — the registration record with approval status. Users have no password and log in via short-lived GoTrue magiclinks (no credential lives in this table); email-verification state is mirrored from auth.users.

@@ -2,12 +2,13 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
 ---
 
 # Supabase project
@@ -84,6 +85,15 @@ Hippius-specific behaviour (does **not** apply to the local stack):
   (Local: a `Content-Type` mismatch fails SigV4 verification with 403 —
   the signed header is enforced by the signature itself.)
 - `DeleteBucketPolicy` and multipart upload are unsupported.
+- **No image transform/resize API** (full S3 compatibility matrix
+  checked 2026-10-27). The Hippius **CDN** product caches bucket
+  objects near visitors (FR/AU nodes) but does not resize — and a zone
+  over a private bucket makes every object under its prefix publicly
+  readable, which is incompatible with this bucket's private,
+  presigned-only model ([assets](../db/assets.md)). Supabase image
+  transformations have the same non-option status here (Storage-only,
+  Pro-plan-gated) — the rationale for client-side thumbnails is in
+  [assets](../db/assets.md#why-client-side-thumbnails).
 
 ## Required dashboard settings (not in migrations)
 

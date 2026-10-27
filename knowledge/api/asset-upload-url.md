@@ -1,16 +1,16 @@
 ---
 type: edge-function
 title: asset-upload-url (presigned image upload)
-description: "Edge function that issues a one-off presigned S3 PUT (15-min TTL) for an approved guest — key chosen server-side, content-type and size limits enforced up front."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
+description: "Edge function that issues one-off presigned S3 PUTs (15-min TTL) for an approved guest — one for the original, one for its client-generated WebP thumbnail — keys chosen server-side, content-type and size limits enforced up front."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
 ---
 
 # asset-upload-url
 
 The write side of the [guest gallery](../stories/guest-gallery.md).
 Guests upload their own images; the bucket stays private, so the browser
-gets a presigned PUT for exactly one key **the function chose**.
+gets presigned PUTs for exactly the two keys **the function chose**
+(original and thumbnail).
 
 ## Contract
 
@@ -19,7 +19,8 @@ POST /functions/v1/asset-upload-url
 Authorization: Bearer <approved guest access token>
 Content-Type: application/json
 
-{ "filename": "photo.jpg", "content_type": "image/jpeg", "byte_size": 204800 }
+{ "filename": "photo.jpg", "content_type": "image/jpeg",
+  "byte_size": 204800, "thumb_byte_size": 131072 }
 ```
 
 ## Behavior
@@ -29,28 +30,35 @@ Content-Type: application/json
    [assets RLS](../db/assets.md) remains the rule (403 otherwise).
 2. Validate against the v1 limits from the [guest
    gallery](../stories/guest-gallery.md) story: `content_type` in the
-   allowlist and `byte_size` under the cap. 415 / 413 otherwise.
-3. Generate the key server-side: `uploads/<user_id>/<uuid>`. A
-   malicious client can never target another user's key or an
-   admin-seeded key.
-4. Sign a presigned PUT (15-minute TTL) with the declared
-   `Content-Type` as a signed header (on Hippius the gateway does not
-   enforce it — see [Known gaps](#known-gaps-accepted-for-v1)).
-5. Return `{ s3_key, upload_url, expires_at }`. The client then:
-   1. `PUT`s the bytes to `upload_url` with the matching
-      `Content-Type` header (CORS is handled by the S3 endpoint —
-      Hippius gateway hosted, local storage-api in local dev; see
-      [Supabase project](../platform/project.md#assets-s3-hippius-local-stack)).
-   2. On a 200 from the PUT, inserts the [assets](../db/assets.md) row
-      via PostgREST (`user_id` = `auth.uid()`, `s3_key`/`content_type`/
-      `byte_size` as returned). The row appears in every approved
-      guest's gallery on their next load.
+   allowlist and `byte_size` under the cap; the thumbnail is always
+   `image/webp` by design and its declared size is checked against a
+   smaller cap. 415 / 413 otherwise.
+3. Generate both keys server-side: `uploads/<user_id>/<uuid>` and
+   `thumbs/<user_id>/<uuid>.webp`. A malicious client can never
+   target another user's keys or an admin-seeded key.
+4. Sign presigned PUTs (15-minute TTL) for both keys: the original's
+   with the declared `Content-Type` as a signed header, the
+   thumbnail's with `image/webp` (on Hippius the gateway does not
+   enforce them — see [Known gaps](#known-gaps-accepted-for-v1)).
+5. Return `{ s3_key, thumb_s3_key, upload_url, thumb_upload_url,
+   expires_at }`. The client then:
+   1. Generates the thumbnail **before** calling this function (canvas
+      downscale → WebP, long edge ~800 px — size/quality is an open
+      detail in the story), which is how it knows `thumb_byte_size`.
+   2. `PUT`s both bytes to their URLs with the matching `Content-Type`
+      header (CORS is handled by the S3 endpoint — Hippius gateway
+      hosted, local storage-api in local dev; see [Supabase
+      project](../platform/project.md#assets-s3-hippius-local-stack)).
+   3. On a 200 from both PUTs, inserts the [assets](../db/assets.md)
+      row via PostgREST (`user_id` = `auth.uid()`, `s3_key`/
+      `thumb_s3_key`/`content_type`/`byte_size` as returned). The row
+      appears in every approved guest's gallery on their next load.
 
 ## Responses
 
 | Status | Body | When |
 |---|---|---|
-| 200 | `{ s3_key, upload_url, expires_at }` | approved caller, limits pass |
+| 200 | `{ s3_key, thumb_s3_key, upload_url, thumb_upload_url, expires_at }` | approved caller, limits pass |
 | 400 | `{ error: "bad_request" }` | malformed body, missing fields |
 | 401 | `{ error: "unauthorized" }` | no valid session |
 | 403 | `{ error: "not_approved" }` | session valid, user not approved |
@@ -59,12 +67,13 @@ Content-Type: application/json
 
 ## Known gaps (accepted for v1)
 
-- The row is inserted only **after** a successful PUT; a failed or
-  abandoned PUT leaves an **orphan object** in the bucket with no row.
-  Orphans are invisible to the site (nothing enumerates bucket keys);
-  cleanup is an open question.
-- No magic-byte validation of the uploaded bytes yet — the limits check
-  the declared headers only. Revisit if abuse appears.
+- The row is inserted only **after** both successful PUTs; a failed or
+  abandoned upload leaves **orphan objects** (original and/or
+  thumbnail) in the bucket with no row. Orphans are invisible to the
+  site (nothing enumerates bucket keys); cleanup is an open question.
+- No magic-byte validation of the uploaded bytes yet — the limits
+  check the declared headers only (including `thumb_byte_size`, a
+  client assertion). Revisit if abuse appears.
 - The presigned PUT's signed `Content-Type` is **not enforced by the
   Hippius gateway**: a PUT with a different `Content-Type` also
   succeeds, and the type actually sent is what gets stored (verified
