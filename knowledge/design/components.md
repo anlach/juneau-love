@@ -2,7 +2,7 @@
 type: component
 title: Shared components and conventions
 description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid, the header account menu) plus the StateScreen component for the signed-in status screens."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:41:54Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T14:23:29Z }
 ---
 
 # Shared components
@@ -43,7 +43,7 @@ lived here: [Design tokens](/tokens.md).
 | `.table` | Data table (registrations) | header row in `.muted`, hairline row separators, `.actions` cell right-aligned with small buttons |
 | `.gallery-grid` | Photo grid | auto-fill `minmax(180px, 1fr)`; 4:3 `object-fit: cover` images; hatched `.placeholder` when no presigned URL is available; caption shows uploader (italic) + caption |
 | `.spread` | Row of actions under a card | centered, wrapping |
-| `.menu-btn` / `.menu` / `.menu-item` | Header account menu (icon button + dropdown) | button toggles `aria-expanded`; dropdown is `role="menu"` positioned absolute below the button (`--bg-elevated` fill, hairline gold border, same shadow as `.card`); entries are full-width `role="menuitem"`, hover tinted with a gold mix |
+| `.menu-btn` / `.menu` / `.menu-item` | Header account menu (icon button + dropdown) | button toggles `aria-expanded`; dropdown is `role="menu"` positioned absolute below the button, CSS-defaulted to right-aligned with it; the root layout clamps the opened menu's left position in JS (measured on open + `resize`) so it always stays inside the viewport with an 8px margin — required because on narrow screens the header wraps and the button can sit at the viewport's left edge, where a right-aligned menu would overflow off-screen; dropdown fill `--bg-elevated`, hairline gold border, same shadow as `.card`; entries are full-width `role="menuitem"`, hover tinted with a gold mix |
 
 ## StateScreen (src/lib/components/StateScreen.svelte)
 
