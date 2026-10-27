@@ -2,7 +2,7 @@
 type: project-notes
 title: Bug list
 description: Running log of real bugs found in the hosted Supabase project, the mail stack, and the site — with root cause, fix, and status. Newest first.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T14:40:00Z }
 ---
 
 # Bug list
@@ -21,10 +21,6 @@ the target route (that's how the `/verify` email hop works). Curl/bots
 see 404s on those paths — expected, not a bug.
 
 ## OPEN
-
-### Approved guest can delete any approved user through the `guest_names` view (2026-10-26)
-The `public.guest_names` view is `SECURITY DEFINER` (`security_invoker = off`; required — it must escape `users`' own-row RLS for the gallery name join, [assets](../db/assets.md)). Supabase's hosted project sets **default privileges granting full table DML** (`arwdDxtm`) to `anon`, `authenticated`, and `service_role` on `public` objects, so the migration's explicit `grant select` adds to — not replaces — that grant surface. The view is auto-updatable, and DML through a definer view runs with the **owner's** privileges (bypassing `users` RLS) while triggers see `current_user` as the calling role. `guard_user_row` is `before insert or update` only, and `users` has no DELETE policy, so the unguarded path is DELETE: an approved guest can `delete from public.guest_names where id = <any approved user>` (e.g. `DELETE /rest/v1/guest_names?id=eq.…` with their own session) — the victim's `users` row is deleted **and cascades to `assets`** (account + all their images gone). Cross-row UPDATE is blocked (guard's catch-all deny), INSERT is blocked (NOT NULL `email` + view CHECK OPTION). Verified on the local stack (identical schema) 2026-10-26; the linked project holds the same grants and trigger shape.
-- Planned fix: pin the view read-only for client roles (`revoke all … from anon, authenticated; grant select … to authenticated`) plus a `before delete` guard on `users` as backstop (branch `guest-names-read-only`).
 
 ### Hosted GoTrue's template fetch never reaches the target host (2026-10-26)
 GoTrue's fetch of a configured `mailer_templates_*_content` URL returns a
@@ -59,6 +55,12 @@ would break auth mail again.
   reverse). Candidate for a Supabase support ticket.
 
 ## FIXED
+
+### Approved guest can delete any approved user through the `guest_names` view (2026-10-26 → 2026-10-27)
+The `public.guest_names` view is `SECURITY DEFINER` (`security_invoker = off`; required — it must escape `users`' own-row RLS for the gallery name join, [assets](../db/assets.md)). Supabase's hosted project sets **default privileges granting full table DML** (`arwdDxtm`) to `anon`, `authenticated`, and `service_role` on `public` objects, so the migration's explicit `grant select` adds to — not replaces — that grant surface. The view is auto-updatable, and DML through a definer view runs with the **owner's** privileges (bypassing `users` RLS) while triggers see `current_user` as the calling role. `guard_user_row` is `before insert or update` only, and `users` has no DELETE policy, so the unguarded path is DELETE: an approved guest can `delete from public.guest_names where id = <any approved user>` (e.g. `DELETE /rest/v1/guest_names?id=eq.…` with their own session) — the victim's `users` row is deleted **and cascades to `assets`** (account + all their images gone). Cross-row UPDATE is blocked (guard's catch-all deny), INSERT is blocked (NOT NULL `email` + view CHECK OPTION). Verified on the local stack (identical schema) 2026-10-26; the linked project held the same grants and trigger shape.
+- **Fix (migration `20261027142007_guest_names_read_only`):** (1) `revoke all on public.guest_names from anon, authenticated` + re-pin `grant select … to authenticated` — pins the view's client surface to the documented read, so PostgREST 403s (PGRST301) any DML on it; (2) backstop `guard_user_delete` — a SECURITY INVOKER `before delete` trigger on `users` accepting only server-side roles (`postgres`, `service_role`, `supabase_auth_admin`), with `execute` revoked from client roles — so a future client DML grant on any definer view still cannot reach `users` rows.
+- **Non-obvious:** a GoTrue admin delete (the supported way to remove a user) fires the guard as `current_user = postgres` even though GoTrue's session role is `supabase_auth_admin` — the `auth.users → users` RI cascade runs with the bootstrap superuser (verified 2026-10-27 with a temp logging trigger; `supabase_auth_admin` holds no direct DML on `users`). The accepted owner bypass therefore already covers user removal; `supabase_auth_admin` is allowed as resilience against a future GoTrue that deletes profile rows directly. Don't remove that branch — it would break every auth-user deletion.
+- **Verified:** repro `e2e/approved-guest.spec.ts` ("guest_names view backstop") failed pre-fix (DELETE → 204, victim deleted) and passes post-fix (403, victim intact); full e2e suite green 2026-10-27. Residual: the hosted project needs the migration deployed (operator, post-merge).
 
 ### UMich 451 tempfails — degenerate template bodies, not shape or IP (2026-10-23 → 2026-10-26)
 umich.edu's Mimecast gateway (`mx1/mx2.a.mail.umich.edu`) temp-failed
