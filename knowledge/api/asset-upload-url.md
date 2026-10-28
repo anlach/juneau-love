@@ -2,7 +2,7 @@
 type: edge-function
 title: asset-upload-url (presigned image upload)
 description: "Edge function that issues one-off presigned S3 PUTs (15-min TTL) for an approved guest — one for the original, one for its client-generated WebP thumbnail — keys chosen server-side, content-type and size limits enforced up front."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-28T06:07:06Z }
 ---
 
 # asset-upload-url
@@ -31,8 +31,8 @@ Content-Type: application/json
 2. Validate against the v1 limits from the [guest
    gallery](../stories/guest-gallery.md) story: `content_type` in the
    allowlist and `byte_size` under the cap; the thumbnail is always
-   `image/webp` by design and its declared size is checked against a
-   smaller cap. 415 / 413 otherwise.
+   `image/webp` by design and its declared size is checked against the
+   2 MB cap. 415 / 413 otherwise.
 3. Generate both keys server-side: `uploads/<user_id>/<uuid>` and
    `thumbs/<user_id>/<uuid>.webp`. A malicious client can never
    target another user's keys or an admin-seeded key.
@@ -43,8 +43,10 @@ Content-Type: application/json
 5. Return `{ s3_key, thumb_s3_key, upload_url, thumb_upload_url,
    expires_at }`. The client then:
    1. Generates the thumbnail **before** calling this function (canvas
-      downscale → WebP, long edge ~800 px — size/quality is an open
-      detail in the story), which is how it knows `thumb_byte_size`.
+      downscale → WebP, long edge 800 px, quality 0.8, never
+      upscaling — the business rule in the
+      [guest gallery](../stories/guest-gallery.md) story), which is how
+      it knows `thumb_byte_size`.
    2. `PUT`s both bytes to their URLs with the matching `Content-Type`
       header (CORS is handled by the S3 endpoint — Hippius gateway
       hosted, local storage-api in local dev; see [Supabase

@@ -45,25 +45,49 @@ Deno.serve(withCors(async (req) => {
   // come back. Dedupe so the response has at most one entry per id.
   const idList = [...new Set(asset_ids as string[])].join(",");
   const lookup = await restAsUser(
-    `assets?select=id,s3_key,content_type&id=in.(${idList})`,
+    `assets?select=id,s3_key,thumb_s3_key,content_type&id=in.(${idList})`,
     userJwt,
   );
   if (lookup === null || lookup.status < 200 || lookup.status >= 300) {
     console.error(`[asset-url] assets lookup failed (HTTP ${lookup?.status})`);
     return json({ error: "unavailable" }, { status: 500 });
   }
-  const rows = (lookup.data ?? []) as Array<{ id: string; s3_key: string; content_type: string }>;
+  const rows = (lookup.data ?? []) as Array<{
+    id: string;
+    s3_key: string;
+    thumb_s3_key: string | null;
+    content_type: string;
+  }>;
 
   const urls = await Promise.all(
     rows.map(async (row) => {
-      const { url, expiresAt } = await presignS3ObjectUrl({
-        bucket: S3.bucket,
-        key: row.s3_key,
-        method: "GET",
-        expiresInSeconds: PRESIGN_TTL_SECONDS,
-        extraQuery: { "response-content-type": row.content_type },
-      });
-      return { asset_id: row.id, url, expires_at: expiresAt };
+      // The grid loads the thumbnail; the full-size original is fetched
+      // only when a guest opens the image. Rows without a thumbnail get
+      // no thumb_url — the client falls back to `url`.
+      const [{ url, expiresAt }, thumb] = await Promise.all([
+        presignS3ObjectUrl({
+          bucket: S3.bucket,
+          key: row.s3_key,
+          method: "GET",
+          expiresInSeconds: PRESIGN_TTL_SECONDS,
+          extraQuery: { "response-content-type": row.content_type },
+        }),
+        row.thumb_s3_key
+          ? presignS3ObjectUrl({
+              bucket: S3.bucket,
+              key: row.thumb_s3_key,
+              method: "GET",
+              expiresInSeconds: PRESIGN_TTL_SECONDS,
+              extraQuery: { "response-content-type": "image/webp" },
+            })
+          : Promise.resolve(null),
+      ]);
+      return {
+        asset_id: row.id,
+        url,
+        ...(thumb ? { thumb_url: thumb.url } : {}),
+        expires_at: expiresAt,
+      };
     }),
   );
   return json({ urls });

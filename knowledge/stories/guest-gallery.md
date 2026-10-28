@@ -2,7 +2,7 @@
 type: user-story
 title: Guest gallery
 description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. The grid loads client-generated WebP thumbnails; the full-size original loads on demand. No delete in v1."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-28T06:07:06Z }
 ---
 
 # Guest gallery
@@ -25,8 +25,8 @@ them to the public internet.
    one batched call and renders the returned presigned **thumbnail**
    URLs (15-minute TTL) as `<img>` sources, caching them until near
    expiry. The same call returns the full-size original URL, which is
-   fetched only on demand (when a guest opens an image — the
-   presentation, e.g. lightbox vs new tab, is an open design detail).
+   fetched only on demand (when a guest opens an image — a new tab in
+   v1; see [Gallery thumbnail rendering](../design/gallery-thumbnails.md)).
    Rows without a thumbnail fall back to the full-size URL.
 3. To upload: choose an image → the browser downscales it to a WebP
    thumbnail locally → [asset-upload-url](../api/asset-upload-url.md)
@@ -71,9 +71,9 @@ them to the public internet.
   photos uploaded before a rejection stay in the gallery — intended
   for v1.
 - **Thumbnails are generated client-side at upload time** (browser
-  downscale → WebP, long edge ~800 px; exact size/quality is an open
-  detail): the grid's network weight stays small with no server-side
-  image processing. Why on-the-fly transforms (Supabase Storage
+  downscale → WebP, long edge 800 px, never upscaling, quality 0.8):
+  the grid's network weight stays small with no server-side image
+  processing. Why on-the-fly transforms (Supabase Storage
   transforms, Hippius) were ruled out is in
   [assets](../db/assets.md). Admin-seeded photos get their thumbnails
   by a one-off admin backfill (same out-of-band convention as
