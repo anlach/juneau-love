@@ -2,7 +2,7 @@
 type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password and log in via short-lived GoTrue magiclinks (no credential lives in this table); email-verification state is mirrored from auth.users.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:41:54Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T14:23:31Z }
 ---
 
 # users
@@ -55,8 +55,9 @@ create table public.users (
 ```
 
 Triggers: `on_auth_user_created` and `on_auth_email_confirmed` on
-`auth.users`; `guard_user_row` (BEFORE INSERT OR UPDATE) and
-`sync_user_role` (BEFORE UPDATE) on `users`. The trigger functions have
+`auth.users`; `guard_user_row` (BEFORE INSERT OR UPDATE),
+`sync_user_role` (BEFORE UPDATE), and `guard_user_delete`
+(BEFORE DELETE) on `users`. The trigger functions have
 `EXECUTE` revoked from `public`, `anon`, and `authenticated`, so a direct
 call cannot bypass the guard — e.g. `select public.sync_user_role()`
 would otherwise let a caller self-grant the guest role. No indexes beyond
@@ -214,3 +215,18 @@ functions, `postgres` for the owner console — and `auth.uid()`):
 - On INSERT → `status` forced to `'pending'` and `email_confirmed_at`
   forced to `null`, so a hand-crafted self-insert can never skip review
   or claim verification.
+
+**Deletes — server-side roles only.** There is no DELETE policy, no
+`delete` grant for `authenticated`, and a `BEFORE DELETE` guard
+trigger (`guard_user_delete`) accepts only server-side roles
+(`current_user` in `postgres`, `service_role`,
+`supabase_auth_admin`); anything else raises. `postgres` covers the
+owner console / migrations **and every `auth.users → users` FK
+cascade**: a GoTrue admin delete — the supported way to remove a
+user — fires the guard as `postgres` even though GoTrue's session
+role is `supabase_auth_admin` (verified on the local stack
+2026-10-27); `service_role` keeps the initial schema's delete grant
+meaningful for edge functions (no v1 path). The guard is the
+backstop for the [guest_names](/assets.md) view: DML through that
+definer view would run with the owner's privileges, but the delete
+is refused here (the view itself is read-only for client roles).

@@ -166,6 +166,17 @@ R=$(rest POST "" "users" '{"email":"anon-insert@test.dev","display_name":"Anon"}
 check_error "anon: insert blocked by RLS (no insert policy)" "$R" "row-level security"
 check "grant: service_role has all on users" "t" \
   "$(psql "select has_table_privilege('service_role'::regrole, 'public.users'::regclass, 'SELECT') and has_table_privilege('service_role'::regrole, 'public.users'::regclass, 'INSERT') and has_table_privilege('service_role'::regrole, 'public.users'::regclass, 'UPDATE') and has_table_privilege('service_role'::regrole, 'public.users'::regclass, 'DELETE')")"
+# guest_names is pinned read-only for client roles (20261027142007): the
+# default privileges would otherwise hand client roles full DML on the
+# view, and DML through a definer view runs with the owner's privileges.
+check "grant: guest_names select for authenticated" "t" \
+  "$(psql "select has_table_privilege('authenticated'::regrole, 'public.guest_names'::regclass, 'SELECT')")"
+check "grant: guest_names DML revoked from authenticated" "f" \
+  "$(psql "select has_table_privilege('authenticated'::regrole, 'public.guest_names'::regclass, 'INSERT') or has_table_privilege('authenticated'::regrole, 'public.guest_names'::regclass, 'UPDATE') or has_table_privilege('authenticated'::regrole, 'public.guest_names'::regclass, 'DELETE')")"
+check "grant: guest_names no anon access" "f" \
+  "$(psql "select has_table_privilege('anon'::regrole, 'public.guest_names'::regclass, 'SELECT') or has_table_privilege('anon'::regrole, 'public.guest_names'::regclass, 'DELETE')")"
+check "grant: guest_names service_role keeps full access" "t" \
+  "$(psql "select has_table_privilege('service_role'::regrole, 'public.guest_names'::regclass, 'SELECT') and has_table_privilege('service_role'::regrole, 'public.guest_names'::regclass, 'DELETE')")"
 
 # --- 2. RLS matrix (pure seed state, read-only) -------------------------------
 psql "insert into public.assets (user_id, s3_key, content_type, byte_size, caption)
@@ -176,7 +187,12 @@ echo "== 2. RLS matrix (seed state) =="
 check "anon: users"        "0" "$(count_json "$(rest GET "" "users")")"
 check "anon: roles"        "0" "$(count_json "$(rest GET "" "roles")")"
 check "anon: assets"       "0" "$(count_json "$(rest GET "" "assets")")"
-check "anon: guest_names"  "0" "$(count_json "$(rest GET "" "guest_names")")"
+# anon's select on guest_names was revoked (20261027142007): the Data API
+# refuses the query outright instead of returning the empty set the
+# view's is_approved() filter produced; the positive read surface is the
+# guest/admin row counts below.
+R=$(rest GET "" "guest_names")
+check_error "anon: guest_names denied (no select grant)" "$R" "permission denied"
 check "pending: own users row only"   "1" "$(count_json "$(rest GET "$PEND_JWT" "users")")"
 check "pending: guest_names"          "0" "$(count_json "$(rest GET "$PEND_JWT" "guest_names")")"
 check "pending: assets (not approved)" "0" "$(count_json "$(rest GET "$PEND_JWT" "assets")")"
@@ -384,10 +400,35 @@ check "decision: unknown decision value 400" "400" "$(fn_code "$R")"
 R=$(fn send-login-link - '{"email":"not-an-email"}')
 check "sign-in: invalid email 400" "400" "$(fn_code "$R")"
 
+# --- 9c. users delete guard (the backstop behind the guest_names revoke) ----
+echo "== 9c. users delete guard: server roles delete, client roles don't =="
+# Positive: service_role holds the initial schema's delete grant on users
+# (bypassrls) — the guard must not over-block the sanctioned path.
+R=$(rest DELETE "$SVC_KEY" "users?id=eq.$OTP_ID" "" -w $'\n%{http_code}')
+check "guard: service_role delete accepted" "204" "$(echo "$R" | tail -1)"
+check "guard: service_role delete removed the row" "0" \
+  "$(psql "select count(*) from public.users where id='$OTP_ID'")"
+# Negative: a client role is refused even when a definer window hands it
+# the owner's privileges (the 2026-10-26 guest_names mechanism) — the
+# guard is the layer behind the view ACLs.
+psql "create or replace view public.guard_test_window with (security_invoker = off)
+      as select id from public.users" > /dev/null
+psql "grant delete on public.guard_test_window to authenticated" > /dev/null
+OUT=$(psql_out "set role authenticated; delete from public.guard_test_window where id='$NEWBIE_ID'")
+psql "drop view public.guard_test_window" > /dev/null
+check_error "guard: client delete through a definer window is refused" "$OUT" \
+  "users: delete not allowed for role authenticated"
+check "guard: refused delete left the row intact" "1" \
+  "$(psql "select count(*) from public.users where id='$NEWBIE_ID'")"
+
 # --- 10. cleanup ---------------------------------------------------------------
 echo "== 10. cleanup: back to seed state =="
 psql "delete from auth.identities where user_id='$NEWBIE_ID'" > /dev/null
 psql "delete from auth.users where id='$NEWBIE_ID'" > /dev/null   # cascades to users
+# Positive: the GoTrue admin delete path (auth.users -> users FK cascade
+# fires the guard as postgres) must not be blocked by the guard.
+check "guard: postgres cascade delete allowed (GoTrue admin path)" "0" \
+  "$(psql "select count(*) from public.users where id='$NEWBIE_ID'")"
 psql "delete from auth.identities where user_id in (select id from auth.users where email='$OTP_EMAIL')" > /dev/null
 psql "delete from auth.users where email='$OTP_EMAIL'" > /dev/null # cascades to users
 psql "delete from public.assets where s3_key='test/gallery.jpg'" > /dev/null

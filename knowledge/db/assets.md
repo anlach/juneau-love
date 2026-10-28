@@ -2,7 +2,7 @@
 type: db-table
 title: assets
 description: "Metadata for images stored in a private external S3 bucket — one row per image (admin-seeded or guest-uploaded); the bytes live in S3, and RLS decides which approved guests may see (and get a presigned URL for) each row."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T14:23:31Z }
 verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
 ---
 
@@ -74,6 +74,10 @@ as select id, display_name
 from public.users
 where status = 'approved' and public.is_approved();
 
+-- Read-only for client roles: Supabase's default privileges hand
+-- them full DML on public objects, and DML through a definer view
+-- runs with the owner's privileges (bypassing users RLS).
+revoke all on public.guest_names from anon, authenticated;
 grant select on public.guest_names to authenticated;
 ```
 
@@ -88,6 +92,17 @@ back NULL for every other uploader. The view exposes only
 `(id, display_name)`; `is_approved()` keeps unapproved callers at
 zero rows, and `status = 'approved'` keeps pending/rejected names
 out of the result even for approved callers.
+
+**Read-only for client roles.** The owner-privilege escape that
+lets the view span [users](/users.md) RLS also makes it a DML
+channel: before the revoke above, an approved guest's `DELETE
+/rest/v1/guest_names?id=eq.…` ran with the owner's privileges,
+deleted any approved user, and the FK cascade took their assets
+rows (and the gallery images behind them) with it
+([Bug list](../platform/bugs.md), 2026-10-26 entry). The revoke
+pins the view's client surface to `select` for `authenticated`;
+the [users delete guard](/users.md) is the backstop that refuses
+the delete even if a future grant reopened DML on a definer view.
 
 # Access patterns
 
@@ -138,4 +153,6 @@ zero rows and therefore can never obtain a presigned URL for any image.
 **Data API grants:** `service_role` — all four; `authenticated` —
 `select, insert` (mirrors the policies, no `update`/`delete`);
 `anon` — `select` only (zero rows, no anon policy). The `guest_names`
-view is granted `select` to `authenticated` only.
+view is pinned read-only for client roles: `select` to
+`authenticated` only, with the default-privilege DML revoked from
+`anon` and `authenticated` (see the view's grant block above).
