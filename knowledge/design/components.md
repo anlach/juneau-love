@@ -43,7 +43,7 @@ lived here: [Design tokens](/tokens.md).
 | `.table` | Data table (registrations) | header row in `.muted`, hairline row separators, `.actions` cell right-aligned with small buttons |
 | `.gallery-grid` | Photo grid | auto-fill `minmax(180px, 1fr)`; images at their natural aspect ratio (`width: 100%; height: auto` — no crop or stretch), the grid source is the thumbnail when present, wrapped in a plain link to the full-size original (`target="_blank" rel="noopener"`); hatched `.placeholder` keeps a fixed 4:3 box when no presigned URL is available; caption shows uploader (italic) + caption |
 | `.spread` | Row of actions under a card | centered, wrapping |
-| `.menu-btn` / `.menu` / `.menu-item` | Header account menu (icon button + dropdown) | button toggles `aria-expanded`; dropdown is `role="menu"` positioned absolute below the button (`--bg-elevated` fill, hairline gold border, same shadow as `.card`); entries are full-width `role="menuitem"`, hover tinted with a gold mix |
+| `.menu-btn` / `.menu` / `.menu-item` | Header account menu (icon button + dropdown) | button toggles `aria-expanded`; dropdown is `role="menu"` positioned absolute below the button, CSS-defaulted to right-aligned with it; the root layout clamps the opened menu's left position in JS (measured on open + `resize`) so it always stays inside the viewport with an 8px margin — required because on narrow screens the header wraps and the button can sit at the viewport's left edge, where a right-aligned menu would overflow off-screen; dropdown fill `--bg-elevated`, hairline gold border, same shadow as `.card`; entries are full-width `role="menuitem"`, hover tinted with a gold mix |
 
 ## StateScreen (src/lib/components/StateScreen.svelte)
 

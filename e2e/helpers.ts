@@ -55,6 +55,34 @@ function adminHeaders() {
 	return { 'Content-Type': 'application/json', Authorization: `Bearer ${service}` };
 }
 
+/** The anon key the e2e build is baked with (.env.test). */
+export function anonKey(): string {
+	return keys().anon;
+}
+
+/**
+ * The signed-in user's access token, read from the app's localStorage
+ * session (supabase-js `sb-…-auth-token` entry). Lets a test replay a
+ * real client session directly against the Data API.
+ */
+export async function getAccessToken(page: Page): Promise<string | null> {
+	return page.evaluate(() => {
+		for (let i = 0; i < localStorage.length; i++) {
+			const k = localStorage.key(i);
+			if (!k?.startsWith('sb-')) continue;
+			try {
+				const session = JSON.parse(localStorage.getItem(k) ?? '') as {
+					access_token?: string
+				};
+				if (session.access_token) return session.access_token;
+			} catch {
+				// not a session entry
+			}
+		}
+		return null;
+	});
+}
+
 /** Mint a one-shot auth link (GoTrue admin), the local stand-in for email. */
 export async function generateLink(
 	email: string,

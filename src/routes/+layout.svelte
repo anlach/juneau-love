@@ -12,6 +12,9 @@
 	const name = $derived(auth.profile?.display_name ?? undefined);
 
 	let menuOpen = $state(false);
+	let menuLeft = $state<number | undefined>(undefined);
+	let menuBtnEl = $state.raw<HTMLButtonElement | undefined>(undefined);
+	let menuEl = $state.raw<HTMLDivElement | undefined>(undefined);
 
 	// The account menu closes on outside click and Escape while open.
 	$effect(() => {
@@ -29,6 +32,35 @@
 			document.removeEventListener('pointerdown', onPointerDown);
 			document.removeEventListener('keydown', onKeyDown);
 		};
+	});
+
+	// The dropdown is CSS-defaulted to right-aligned with the button. When
+	// the header wraps (narrow screens) the button can sit at the viewport's
+	// left edge and the menu would overflow off-screen, so while open we
+	// measure and clamp its left position to keep it in the viewport with a
+	// margin.
+	const MENU_MARGIN_PX = 8;
+
+	$effect(() => {
+		if (!menuOpen) {
+			menuLeft = undefined;
+			return;
+		}
+		const place = () => {
+			const btn = menuBtnEl;
+			const menu = menuEl;
+			if (!btn || !menu) return;
+			const btnRect = btn.getBoundingClientRect();
+			const width = menu.offsetWidth;
+			if (!width) return;
+			// Desired: menu's right edge aligned with the button's.
+			const desiredLeft = btnRect.right - width;
+			const maxLeft = Math.max(window.innerWidth - MENU_MARGIN_PX - width, MENU_MARGIN_PX);
+			menuLeft = Math.min(Math.max(desiredLeft, MENU_MARGIN_PX), maxLeft) - btnRect.left;
+		};
+		place();
+		window.addEventListener('resize', place);
+		return () => window.removeEventListener('resize', place);
 	});
 
 	onMount(() => initAuth());
@@ -89,6 +121,7 @@
 					aria-label="Menu"
 					aria-haspopup="menu"
 					aria-expanded={menuOpen}
+					bind:this={menuBtnEl}
 					onclick={() => (menuOpen = !menuOpen)}
 				>
 					<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
@@ -101,7 +134,13 @@
 					</svg>
 				</button>
 				{#if menuOpen}
-					<div class="menu" role="menu" aria-label="Account">
+					<div
+						class="menu"
+						role="menu"
+						aria-label="Account"
+						bind:this={menuEl}
+						style={menuLeft === undefined ? undefined : `left: ${menuLeft}px; right: auto`}
+					>
 						<a
 							role="menuitem"
 							class="menu-item"
