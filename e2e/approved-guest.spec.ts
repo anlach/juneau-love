@@ -164,14 +164,32 @@ test.describe('approved guest', () => {
 
 			// The grid renders the thumbnail: the <img> src is exactly the
 			// thumb_url asset-url signed for the row — not the full-size url.
+			const img = page.getByRole('img', { name: /a shared photo/i });
 			await expect
 				.poll(() => thumbEntry?.asset_id, { timeout: 10_000 })
 				.toBe(assets[0].id);
-			await expect(page.getByRole('img', { name: /a shared photo/i })).toHaveAttribute(
-				'src',
-				thumbEntry!.thumb_url
-			);
+			await expect(img).toHaveAttribute('src', thumbEntry!.thumb_url);
 			expect(thumbEntry!.thumb_url).not.toBe(thumbEntry!.url);
+
+			// The grid shows the thumbnail at its natural aspect ratio
+			// (width-constrained, never stretched or cropped into a fixed
+			// box): rendered ratio == the thumbnail's own ratio.
+			const rect = await img.evaluate(
+				(el) =>
+					new Promise<{ w: number; h: number }>((resolve) => {
+						const done = () => {
+							const r = el.getBoundingClientRect();
+							resolve({ w: r.width, h: r.height });
+							};
+						if (el.complete && el.naturalWidth > 0) done();
+						else el.addEventListener('load', done, { once: true });
+					})
+			);
+			const [natW, natH] = await img.evaluate(
+				(el) => [el.naturalWidth, el.naturalHeight] as [number, number]
+			);
+			expect(natW).toBeGreaterThan(0);
+			expect(rect.w / rect.h).toBeCloseTo(natW / natH, 1);
 		} finally {
 			const row = await getUserRow(GUEST_EMAIL);
 			if (row) await deleteAssetsForUser(row.id);
