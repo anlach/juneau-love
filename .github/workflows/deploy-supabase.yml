@@ -61,9 +61,11 @@ jobs:
         run: npx supabase db push --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Schema advisors
-        # RLS / schema health check after every push; warn-only for now
-        # (no --fail-on) until the current findings are triaged.
-        run: npx supabase db advisors --project-ref "$SUPABASE_PROJECT_REF"
+        # --linked is required: db advisors defaults to the local target, and
+        # --project-ref alone is rejected (it only selects the project when the
+        # target is linked). Warn-only for now (no --fail-on) until the current
+        # findings are triaged.
+        run: npx supabase db advisors --linked --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy edge functions
         # All five, every time (idempotent, avoids "forgot which one
