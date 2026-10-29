@@ -29,6 +29,7 @@
 	},
 	"dependencies": {
 		"@fontsource/lavishly-yours": "^5.3.0",
-		"@supabase/supabase-js": "^2.118.0"
+		"@supabase/supabase-js": "^2.118.0",
+		"jszip": "^3.10.2"
 	}
 }

@@ -5,6 +5,7 @@
 	import { cacheUrl, getCached } from '#lib/presign';
 	import { functionErrorCode } from '#lib/fn-error';
 	import StateScreen from '#lib/components/StateScreen.svelte';
+	import JSZip from 'jszip';
 
 	interface Asset {
 		id: string;
@@ -33,6 +34,13 @@
 	let uploadMsg = $state<{ tone: 'ok' | 'err'; text: string } | null>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
 
+	// Download selection (knowledge/stories/download-photos.md): ids of the
+	// checked cells. While non-empty the grid keeps every checkbox visible.
+	let selectedIds = $state<string[]>([]);
+	let downloading = $state(false);
+	let downloadMsg = $state<{ tone: 'ok' | 'err'; text: string } | null>(null);
+	const selecting = $derived(selectedIds.length > 0);
+
 	const status = $derived(auth.kind === 'ready' ? auth.profile?.status ?? null : null);
 	const name = $derived(auth.profile?.display_name ?? undefined);
 	const approved = $derived(status === 'approved');
@@ -54,6 +62,11 @@
 			return;
 		}
 		assets = data as Asset[];
+
+		// Drop selections whose rows no longer exist (removal is out-of-band;
+		// a stale id would otherwise be an invisible, undeletable selection).
+		const ids = new Set(assets.map((a) => a.id));
+		selectedIds = selectedIds.filter((id) => ids.has(id));
 
 		// Batched uploader display names (guest_names view — a direct users
 		// join is blocked by users' self-only RLS).
@@ -140,6 +153,89 @@
 			return blob;
 		} finally {
 			bitmap.close();
+		}
+	}
+
+	// ---- download ----
+
+	const EXT: Record<string, string> = {
+		'image/jpeg': 'jpg',
+		'image/png': 'png',
+		'image/webp': 'webp'
+	};
+
+	/** Caption → filename base: path-unsafe chars out, whitespace collapsed. */
+	function safeBase(caption: string | null): string {
+		const cleaned = (caption ?? '')
+			.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim();
+		return cleaned || 'photo';
+	}
+
+	/** Unique-per-batch name: `caption.<ext>`, `-<id prefix>` on collision. */
+	function downloadName(a: Asset, used: Set<string>): string {
+		const base = safeBase(a.caption);
+		const ext = EXT[a.content_type] ?? 'bin';
+		let name = `${base}.${ext}`;
+		if (used.has(name)) name = `${base}-${a.id.slice(0, 8)}.${ext}`;
+		let n = 2;
+		while (used.has(name)) name = `${base}-${n++}.${ext}`;
+		used.add(name);
+		return name;
+	}
+
+	/** Blob → saved file via a same-origin object URL (the `download`
+	 *  attribute is ignored on cross-origin S3 navigations). */
+	function triggerDownload(blob: Blob, filename: string): void {
+		const href = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = href;
+		a.download = filename;
+		document.body.append(a);
+		a.click();
+		a.remove();
+		setTimeout(() => URL.revokeObjectURL(href), 10_000);
+	}
+
+	async function onDownload() {
+		if (downloading) return;
+		// Only cells that actually have a signed full-size URL are downloadable.
+		const chosen = assets.filter((a) => selectedIds.includes(a.id) && urls[a.id]);
+		if (!chosen.length) return;
+
+		downloading = true;
+		downloadMsg = null;
+		const used = new Set<string>();
+		const named = chosen.map((a) => ({ a, name: downloadName(a, used) }));
+		try {
+			// The cached presigned full-size URLs are the source: the S3
+			// endpoint answers any-origin fetches (Access-Control-Allow-
+			// Origin: *), so no new endpoint is needed to get bytes.
+			const blobs = await Promise.all(
+				named.map(async ({ a }) => {
+					const res = await fetch(urls[a.id].url);
+					if (!res.ok) throw new Error(`asset fetch failed: ${res.status}`);
+					return res.blob();
+				})
+			);
+			if (named.length === 1) {
+				// One photo → the file itself, no zip wrapper.
+				triggerDownload(blobs[0], named[0].name);
+			} else {
+				// Several → one zip (STORE is JSZip's default: photos are
+				// already compressed, so no deflate CPU and no size surprise).
+				const zip = new JSZip();
+				named.forEach(({ name }, i) => zip.file(name, blobs[i]));
+				triggerDownload(await zip.generateAsync({ type: 'blob' }), 'juneau-love-photos.zip');
+			}
+		} catch {
+			downloadMsg = { tone: 'err', text: 'The download didn’t go through. Please try again.' };
+		}
+		finally {
+			// The selection stays: retrying a failed download shouldn't force
+			// the guest to re-check every box.
+			downloading = false;
 		}
 	}
 
@@ -263,6 +359,22 @@
 		{#if uploadMsg}
 			<span class="msg {uploadMsg.tone}">{uploadMsg.text}</span>
 		{/if}
+		<div class="download">
+			<button
+				class="btn ghost"
+				type="button"
+				disabled={selectedIds.length === 0 || downloading}
+				onclick={onDownload}
+			>
+				{downloading ? 'Preparing…' : 'Download'}
+			</button>
+			{#if selecting}
+				<span class="count">{selectedIds.length} selected</span>
+			{/if}
+			{#if downloadMsg}
+				<span class="msg {downloadMsg.tone}">{downloadMsg.text}</span>
+			{/if}
+		</div>
 	</div>
 
 	{#if loading}
@@ -270,7 +382,7 @@
 	{:else if assets.length === 0}
 		<p class="sub">No photos yet — be the first to share one.</p>
 	{:else}
-		<div class="gallery-grid">
+		<div class="gallery-grid {selecting ? 'selecting' : ''}">
 			{#each assets as asset (asset.id)}
 				<figure>
 					{#if urls[asset.id]}
@@ -287,6 +399,21 @@
 					{:else}
 						<div class="placeholder" role="img" aria-label="Image unavailable"></div>
 					{/if}
+					<!-- Hover/focus reveals the checkbox; any active selection
+					     keeps all of them visible (knowledge/design/
+					     selection-download.md). Disabled without a signed URL. -->
+					<input
+						type="checkbox"
+						class="select"
+						bind:group={selectedIds}
+						value={asset.id}
+						disabled={!urls[asset.id]}
+						aria-label={
+							asset.caption
+								? `Select ${asset.caption} for download`
+								: 'Select this photo for download'
+						}
+					/>
 					<figcaption>
 						{#if names[asset.user_id]}
 							<span class="uploader">{names[asset.user_id]}</span>
@@ -312,5 +439,48 @@
 		align-items: center;
 		gap: 0.75rem;
 		margin: 0.5rem 0 0.5rem;
+	}
+
+	.download {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-left: auto;
+	}
+
+	.download .msg {
+		margin-top: 0;
+	}
+
+	.count {
+		font-size: 0.95rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+
+	.gallery-grid figure {
+		position: relative;
+	}
+
+	/* The checkbox is interactive even while hidden (keyboard focus and
+	   touch taps both reach it); visibility is the effect of hover, an
+	   active selection, or focus. */
+	.select {
+		position: absolute;
+		top: 0.45rem;
+		left: 0.45rem;
+		z-index: 1;
+		width: 1.25rem;
+		height: 1.25rem;
+		margin: 0;
+		opacity: 0;
+		transition: opacity 120ms ease;
+		cursor: pointer;
+	}
+
+	.gallery-grid figure:hover .select,
+	.gallery-grid.selecting .select,
+	.select:focus-visible {
+		opacity: 1;
 	}
 </style>
