@@ -2,13 +2,14 @@
 type: project-notes
 title: Supabase project
 description: The hosted Supabase project (ref, region, Data API exposure setting), the required dashboard settings, where secrets live, and the first-admin bootstrap.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-29T04:46:14Z }
 verified:
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T04:32:01Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T14:02:55Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-25T19:25:13Z }
   - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
+  - { by: pi/Qwen3.8-27B-TEE, at: 2026-10-29T04:46:14Z }
 ---
 
 # Supabase project
@@ -264,6 +265,8 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   times with 60s spacing.
 - `tests/ci-workflow.sh` is a contract test pinning that structure
   (triggers, job names, stack start, suite commands, job independence).
+- Deploying to the hosted Supabase project is a **separate workflow**
+  (push to main, not a PR gate) — see [Deploy](#deploy).
 - The e2e helper mints the local service-role key via `supabase gen
   bearer-jwt --role service_role` and reads the anon key from
   `.env.test` — it must **not** parse `supabase status`'s default-mode
@@ -272,6 +275,26 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
   is the more robust one).
 
 ## Deploy
+
+**Automated on push to main** —
+`.github/workflows/deploy-supabase.yml` (counterpart to the GitHub Pages
+`deploy.yml`): applies pending migrations (`supabase db push`, idempotent —
+tracked in `supabase_migrations.schema_migrations`, filename order), runs
+`supabase db advisors` (warn-only, no `--fail-on`, until findings are
+triaged), then redeploys **all five** edge functions (idempotent; the two
+public ones keep `--no-verify-jwt`). Runs under the `supabase` GitHub
+environment (room for a required-reviewer gate later); `workflow_dispatch`
+re-runs it on demand. CI gating is inherited: branch protection on main
+requires `integration` + `playwright` before merge. Repo secrets it
+consumes: `SUPABASE_ACCESS_TOKEN` (the Management API token =
+`$SUPABASE_ACCESS_KEY`) and `SUPABASE_DB_PASSWORD` (dashboard → Project
+Settings → Database). Contract pinned by `tests/deploy-workflow.sh`
+(same pattern as `tests/ci-workflow.sh`). Function *secrets* (S3, mail
+relay) live in the project's secret store and are untouched by deploys —
+the CLI does not read a `SUPABASE_PROJECT_REF` env var, so the workflow
+passes `--project-ref` explicitly.
+
+Manual fallback (same steps, run locally):
 
 ```sh
 # one-time: export SUPABASE_ACCESS_TOKEN="$SUPABASE_ACCESS_KEY"

@@ -1,0 +1,78 @@
+name: Deploy Supabase
+
+# Hosted-project counterpart of deploy.yml (GitHub Pages): applies pending
+# migrations to the hosted Supabase project and redeploys all edge
+# functions on push to main.
+#
+# Runs on push to main because branch protection on main already requires
+# the `integration` and `playwright` CI checks to pass before merge — by
+# the time a commit lands here, both suites have passed.
+#
+# Idempotent by design: `db push` tracks applied files in
+# supabase_migrations.schema_migrations (only new migrations run, in
+# filename order) and `functions deploy` is a plain re-upload. Re-running
+# via workflow_dispatch is safe.
+#
+# Repo secrets (never in the repo):
+#   SUPABASE_ACCESS_TOKEN  Management API personal access token
+#   SUPABASE_DB_PASSWORD   postgres password (dashboard → Project Settings
+#                          → Database); `db push` connects directly as
+#                          postgres with it
+# Edge-function secrets (S3, mail relay) live in the project's secret
+# store and are untouched by deploys. The `supabase` GitHub environment
+# exists to allow adding a required reviewer (manual gate) later without
+# changing this file.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: supabase
+
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      # Shell variable only (the CLI takes --project-ref; it does not read
+      # a SUPABASE_PROJECT_REF env var). Kept in one place so the ref is
+      # pinned in exactly one line.
+      SUPABASE_PROJECT_REF: asuupanisvfxvbmdpcxt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        # The supabase CLI is a devDependency (npx supabase).
+        run: npm ci
+
+      - name: Apply migrations
+        run: supabase db push --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Schema advisors
+        # RLS / schema health check after every push; warn-only for now
+        # (no --fail-on) until the current findings are triaged.
+        run: supabase db advisors --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy edge functions
+        # All five, every time (idempotent, avoids "forgot which one
+        # changed"). send-login-link and notify-registration are the
+        # public functions (called with no JWT): --no-verify-jwt persists
+        # that setting.
+        run: |
+          supabase functions deploy send-login-link --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy notify-registration --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy registration-decision --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy asset-url --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy asset-upload-url --project-ref "$SUPABASE_PROJECT_REF"
