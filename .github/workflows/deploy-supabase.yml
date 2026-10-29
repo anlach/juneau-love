@@ -58,12 +58,12 @@ jobs:
         run: npm ci
 
       - name: Apply migrations
-        run: supabase db push --project-ref "$SUPABASE_PROJECT_REF"
+        run: npx supabase db push --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Schema advisors
         # RLS / schema health check after every push; warn-only for now
         # (no --fail-on) until the current findings are triaged.
-        run: supabase db advisors --project-ref "$SUPABASE_PROJECT_REF"
+        run: npx supabase db advisors --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy edge functions
         # All five, every time (idempotent, avoids "forgot which one
@@ -71,8 +71,8 @@ jobs:
         # public functions (called with no JWT): --no-verify-jwt persists
         # that setting.
         run: |
-          supabase functions deploy send-login-link --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy notify-registration --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy registration-decision --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy asset-url --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy asset-upload-url --project-ref "$SUPABASE_PROJECT_REF"
+          npx supabase functions deploy send-login-link --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+          npx supabase functions deploy notify-registration --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+          npx supabase functions deploy registration-decision --project-ref "$SUPABASE_PROJECT_REF"
+          npx supabase functions deploy asset-url --project-ref "$SUPABASE_PROJECT_REF"
+          npx supabase functions deploy asset-upload-url --project-ref "$SUPABASE_PROJECT_REF"
