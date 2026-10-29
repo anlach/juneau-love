@@ -43,6 +43,12 @@ user) and is never applied to the hosted project.
 
 ### Deploying migrations to the hosted project
 
+**Automated:** a push to main runs
+[.github/workflows/deploy-supabase.yml](.github/workflows/deploy-supabase.yml),
+which applies pending migrations and redeploys all edge functions
+(`workflow_dispatch` re-runs it on demand). The commands below are the
+manual fallback — the same steps, run locally.
+
 One-time setup:
 
 ```sh
@@ -56,8 +62,9 @@ export SUPABASE_ACCESS_TOKEN="$SUPABASE_ACCESS_KEY"
 supabase link --project-ref asuupanisvfxvbmdpcxt
 ```
 
-Every deploy (migrations are applied in filename order and tracked in
-`supabase_migrations.schema_migrations`, so only new files run):
+Manual fallback (the workflow does exactly this; migrations are applied in
+filename order and tracked in `supabase_migrations.schema_migrations`, so
+only new files run):
 
 ```sh
 # DB password: dashboard → Project Settings → Database. `db push`
@@ -79,8 +86,11 @@ user, approve the row, insert the admin role in the SQL editor) — see
 
 ### Deploying edge functions
 
+**Automated:** the same workflow (push to main) deploys all five functions,
+every time (idempotent). Manual fallback (same one-time setup as above —
+CLI + link): secrets first, then deploy:
+
 ```sh
-# Same one-time setup as above (CLI + link). Secrets first:
 supabase secrets set MAIL_RELAY_URL='https://mail.juneau.love' MAIL_RELAY_TOKEN='<token>'
 supabase secrets set S3_BUCKET=juneau-assets S3_ACCESS_KEY_ID=<hip_…> S3_SECRET_ACCESS_KEY=<key> SUPABASE_ANON_KEY=<anon key>
 

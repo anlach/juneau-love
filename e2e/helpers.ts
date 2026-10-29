@@ -186,27 +186,61 @@ export async function setUserStatus(email: string, status: 'approved' | 'rejecte
 		throw new Error(`status update failed: ${res.status} ${await res.text()}`);
 }
 
-/**
- * Delete a user's asset rows **and** the S3 objects behind them (local
- * stack, service role). Keeps the gallery empty between runs so tests
- * that assert the empty state stay valid. The S3 object is removed via
- * the storage API — the S3 protocol has no bucket listing to find keys.
- */
-export async function deleteAssetsForUser(userId: string): Promise<void> {
-	const res = await fetch(`${REST_URL}/assets?user_id=eq.${userId}&select=s3_key`, {
+/** Read a user's asset rows (service role, bypasses RLS). */
+export interface AssetRow {
+	id: string;
+	user_id: string;
+	s3_key: string;
+	thumb_s3_key: string | null;
+	content_type: string;
+	byte_size: number;
+	caption: string | null;
+	created_at: string;
+}
+
+export async function getAssetsForUser(userId: string): Promise<AssetRow[]> {
+	const res = await fetch(`${REST_URL}/assets?user_id=eq.${userId}&select=*`, {
 		headers: restHeaders()
 	});
 	if (!res.ok) throw new Error(`assets read failed: ${res.status} ${await res.text()}`);
-	const rows = (await res.json()) as Array<{ s3_key: string }>;
-	for (const { s3_key } of rows) {
-		// No Content-Type header: storage-api rejects a DELETE that claims
-		// application/json with an empty body.
-		const del = await fetch(
-			`${SUPABASE_URL}/storage/v1/object/juneau-assets/${s3_key}`,
-			{ method: 'DELETE', headers: { Authorization: `Bearer ${keys().service}` } }
-		);
-		if (!del.ok && del.status !== 204)
-			throw new Error(`S3 object delete failed: ${del.status} ${s3_key}`);
+	return (await res.json()) as AssetRow[];
+}
+
+/**
+ * GET a private-bucket object through the storage API (local stack,
+ * service role) — the same path a presigned GET resolves to, without
+ * needing the signed URL.
+ */
+export async function getStorageObject(key: string): Promise<Response> {
+	return fetch(`${SUPABASE_URL}/storage/v1/object/juneau-assets/${key}`, {
+		headers: { Authorization: `Bearer ${keys().service}` }
+	});
+}
+
+/**
+ * Delete a user's asset rows **and** the S3 objects behind them (local
+ * stack, service role). Keeps the gallery empty between runs so tests
+ * that assert the empty state stay valid. The S3 objects are removed via
+ * the storage API — the S3 protocol has no bucket listing to find keys.
+ */
+export async function deleteAssetsForUser(userId: string): Promise<void> {
+	const res = await fetch(`${REST_URL}/assets?user_id=eq.${userId}&select=s3_key,thumb_s3_key`, {
+		headers: restHeaders()
+	});
+	if (!res.ok) throw new Error(`assets read failed: ${res.status} ${await res.text()}`);
+	const rows = (await res.json()) as Array<{ s3_key: string; thumb_s3_key: string | null }>;
+	for (const { s3_key, thumb_s3_key } of rows) {
+		for (const key of [s3_key, thumb_s3_key]) {
+			if (!key) continue;
+			// No Content-Type header: storage-api rejects a DELETE that claims
+			// application/json with an empty body.
+			const del = await fetch(
+				`${SUPABASE_URL}/storage/v1/object/juneau-assets/${key}`,
+				{ method: 'DELETE', headers: { Authorization: `Bearer ${keys().service}` } }
+			);
+			if (!del.ok && del.status !== 204)
+				throw new Error(`S3 object delete failed: ${del.status} ${key}`);
+		}
 	}
 	if (rows.length) {
 		const del = await fetch(`${REST_URL}/assets?user_id=eq.${userId}`, {

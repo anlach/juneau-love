@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { supabase } from '#lib/supabase';
 	import { auth } from '#lib/session.svelte.ts';
-	import { cacheUrl, getCachedUrl } from '#lib/presign';
+	import { cacheUrl, getCached } from '#lib/presign';
 	import { functionErrorCode } from '#lib/fn-error';
 	import StateScreen from '#lib/components/StateScreen.svelte';
 
@@ -17,9 +17,15 @@
 	const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
 	const MAX_BYTES = 5 * 1024 * 1024;
 
+	// Client-side thumbnail: long edge 800 px, WebP quality 0.8
+	// (knowledge/stories/guest-gallery.md) — generated before the presign
+	// call so the function can size-check the declared bytes.
+	const THUMB_LONG_EDGE = 800;
+	const THUMB_QUALITY = 0.8;
+
 	let assets = $state<Asset[]>([]);
 	let names = $state<Record<string, string>>({});
-	let urls = $state<Record<string, string>>({});
+	let urls = $state<Record<string, { url: string; thumbUrl: string | null }>>({});
 	let loading = $state(true);
 	let s3Available = $state(true);
 
@@ -70,7 +76,7 @@
 
 	async function fetchUrls(ids: string[]) {
 		// Only sign for what we don't already hold (cached until near expiry).
-		const missing = ids.filter((id) => !getCachedUrl(id));
+		const missing = ids.filter((id) => !getCached(id));
 		if (!missing.length) {
 			syncUrls();
 			return;
@@ -88,19 +94,53 @@
 				continue;
 			}
 			for (const u of data?.urls ?? []) {
-				cacheUrl(u.asset_id, u.url, Date.parse(u.expires_at));
+				// thumb_url is absent for rows without a thumbnail; the grid
+				// falls back to the full-size url for those.
+				cacheUrl(u.asset_id, u.url, u.thumb_url ?? null, Date.parse(u.expires_at));
 			}
 		}
 		syncUrls();
 	}
 
 	function syncUrls() {
-		const map: Record<string, string> = {};
+		const map: Record<string, { url: string; thumbUrl: string | null }> = {};
 		for (const a of assets) {
-			const url = getCachedUrl(a.id);
-			if (url) map[a.id] = url;
+			const entry = getCached(a.id);
+			if (entry) map[a.id] = { url: entry.url, thumbUrl: entry.thumbUrl };
 		}
 		urls = map;
+	}
+
+	/**
+	 * Browser-side thumbnail: proportional downscale (long edge 800 px,
+	 * never upscaled) re-encoded as WebP q0.8. Runs before the presign call
+	 * so `thumb_byte_size` is known for the request. createImageBitmap
+	 * applies the image's EXIF orientation, so the thumbnail is upright.
+	 */
+	async function makeThumbnail(file: File): Promise<Blob> {
+		const bitmap = await createImageBitmap(file);
+		try {
+			const scale = Math.min(1, THUMB_LONG_EDGE / Math.max(bitmap.width, bitmap.height));
+			const w = Math.max(1, Math.round(bitmap.width * scale));
+			const h = Math.max(1, Math.round(bitmap.height * scale));
+			const canvas = document.createElement('canvas');
+			canvas.width = w;
+			canvas.height = h;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) throw new Error('no 2d canvas context');
+			ctx.drawImage(bitmap, 0, 0, w, h);
+			const blob = await new Promise<Blob>((resolve, reject) =>
+				canvas.toBlob(
+					(b) => (b ? resolve(b) : reject(new Error('webp encoding failed'))),
+					'image/webp',
+					THUMB_QUALITY
+				)
+			);
+			if (blob.type !== 'image/webp') throw new Error('webp encoding unsupported');
+			return blob;
+		} finally {
+			bitmap.close();
+		}
 	}
 
 	async function onPickFile(e: Event) {
@@ -121,8 +161,15 @@
 
 		uploading = true;
 		try {
+			const thumb = await makeThumbnail(file);
+
 			const { data, error, response } = await supabase.functions.invoke('asset-upload-url', {
-				body: { filename: file.name, content_type: file.type, byte_size: file.size }
+				body: {
+					filename: file.name,
+					content_type: file.type,
+					byte_size: file.size,
+					thumb_byte_size: thumb.size
+				}
 			});
 			if (error || !data) {
 				const code = await functionErrorCode(response);
@@ -136,12 +183,24 @@
 				return;
 			}
 
-			const put = await fetch(data.upload_url, {
+			// Both PUTs must succeed before the row is inserted; a failed or
+			// abandoned upload leaves orphan objects, which are tolerated in
+			// v1 (knowledge/stories/guest-gallery.md).
+			const putOriginal = await fetch(data.upload_url, {
 				method: 'PUT',
 				headers: { 'content-type': file.type },
 				body: file
 			});
-			if (!put.ok) {
+			if (!putOriginal.ok) {
+				uploadMsg = { tone: 'err', text: 'The upload didn’t go through. Please try again.' };
+				return;
+			}
+			const putThumb = await fetch(data.thumb_upload_url, {
+				method: 'PUT',
+				headers: { 'content-type': 'image/webp' },
+				body: thumb
+			});
+			if (!putThumb.ok) {
 				uploadMsg = { tone: 'err', text: 'The upload didn’t go through. Please try again.' };
 				return;
 			}
@@ -149,6 +208,7 @@
 			const { error: insertError } = await supabase.from('assets').insert({
 				user_id: auth.kind === 'ready' ? auth.profile?.id : undefined,
 				s3_key: data.s3_key,
+				thumb_s3_key: data.thumb_s3_key,
 				content_type: file.type,
 				byte_size: file.size
 			});
@@ -158,6 +218,9 @@
 			}
 			uploadMsg = { tone: 'ok', text: 'Added — thank you!' };
 			void load();
+		} catch {
+			// Thumbnail encoding, network, or function failure — one message.
+			uploadMsg = { tone: 'err', text: 'We couldn’t start that upload. Please try again.' };
 		} finally {
 			uploading = false;
 		}
@@ -211,7 +274,16 @@
 			{#each assets as asset (asset.id)}
 				<figure>
 					{#if urls[asset.id]}
-						<img src={urls[asset.id]} alt={asset.caption ?? 'A shared photo'} loading="lazy" />
+						<!-- Grid cell shows the thumbnail; the link opens the
+						     full-size original in a new tab (knowledge/design/
+						     gallery-thumbnails.md). -->
+						<a href={urls[asset.id].url} target="_blank" rel="noopener">
+							<img
+								src={urls[asset.id].thumbUrl ?? urls[asset.id].url}
+								alt={asset.caption ?? 'A shared photo'}
+								loading="lazy"
+							/>
+						</a>
 					{:else}
 						<div class="placeholder" role="img" aria-label="Image unavailable"></div>
 					{/if}

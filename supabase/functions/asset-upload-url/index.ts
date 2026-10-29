@@ -1,15 +1,18 @@
-// asset-upload-url — one-off presigned S3 PUT for an approved guest.
+// asset-upload-url — one-off presigned S3 PUTs for an approved guest:
+// the original and its client-generated WebP thumbnail.
 //
-// Contract: knowledge/api/asset-upload-url.md. The key is chosen
-// server-side (uploads/<user_id>/<uuid>) so a client can never target
-// another user's key or an admin-seeded key. Limits are the v1 limits
-// from the guest gallery story: content-type allowlist + 5 MB cap.
+// Contract: knowledge/api/asset-upload-url.md. Both keys are chosen
+// server-side (uploads/<user_id>/<uuid> and thumbs/<user_id>/<uuid>.webp)
+// so a client can never target another user's key or an admin-seeded
+// key. Limits are the v1 limits from the guest gallery story:
+// content-type allowlist + 5 MB cap (original), 2 MB cap (thumbnail).
 
 import { json, jwtSub, restAsUser, withCors } from "../_shared/index.ts";
 import { S3, presignS3ObjectUrl, s3Configured } from "../_shared/s3.ts";
 
 const ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_ASSET_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_THUMB_BYTES = 2 * 1024 * 1024; // 2 MB — the smaller cap
 const PRESIGN_TTL_SECONDS = 900; // 15 minutes
 
 Deno.serve(withCors(async (req) => {
@@ -23,10 +26,17 @@ Deno.serve(withCors(async (req) => {
   } catch {
     return json({ error: "bad_request" }, { status: 400 });
   }
-  const b = body as { filename?: unknown; content_type?: unknown; byte_size?: unknown };
+  const b = body as {
+    filename?: unknown;
+    content_type?: unknown;
+    byte_size?: unknown;
+    thumb_byte_size?: unknown;
+  };
   if (
     typeof b.content_type !== "string" ||
     typeof b.byte_size !== "number" || !Number.isFinite(b.byte_size) || b.byte_size <= 0 ||
+    typeof b.thumb_byte_size !== "number" || !Number.isFinite(b.thumb_byte_size) ||
+    b.thumb_byte_size <= 0 ||
     (b.filename !== undefined && typeof b.filename !== "string")
   ) {
     return json({ error: "bad_request" }, { status: 400 });
@@ -57,17 +67,35 @@ Deno.serve(withCors(async (req) => {
   if (!ALLOWED_CONTENT_TYPES.includes(b.content_type)) {
     return json({ error: "unsupported_type" }, { status: 415 });
   }
-  if (b.byte_size > MAX_ASSET_BYTES) {
+  if (b.byte_size > MAX_ASSET_BYTES || b.thumb_byte_size > MAX_THUMB_BYTES) {
     return json({ error: "too_large" }, { status: 413 });
   }
 
+  // The thumbnail is always image/webp by design (client canvas downscale);
+  // its key carries the .webp extension so the row self-describes.
   const s3Key = `uploads/${sub}/${crypto.randomUUID()}`;
-  const { url, expiresAt } = await presignS3ObjectUrl({
-    bucket: S3.bucket,
-    key: s3Key,
-    method: "PUT",
-    expiresInSeconds: PRESIGN_TTL_SECONDS,
-    signedHeaders: { "content-type": b.content_type },
+  const thumbS3Key = `thumbs/${sub}/${crypto.randomUUID()}.webp`;
+  const [original, thumb] = await Promise.all([
+    presignS3ObjectUrl({
+      bucket: S3.bucket,
+      key: s3Key,
+      method: "PUT",
+      expiresInSeconds: PRESIGN_TTL_SECONDS,
+      signedHeaders: { "content-type": b.content_type },
+    }),
+    presignS3ObjectUrl({
+      bucket: S3.bucket,
+      key: thumbS3Key,
+      method: "PUT",
+      expiresInSeconds: PRESIGN_TTL_SECONDS,
+      signedHeaders: { "content-type": "image/webp" },
+    }),
+  ]);
+  return json({
+    s3_key: s3Key,
+    thumb_s3_key: thumbS3Key,
+    upload_url: original.url,
+    thumb_upload_url: thumb.url,
+    expires_at: original.expiresAt,
   });
-  return json({ s3_key: s3Key, upload_url: url, expires_at: expiresAt });
 }));

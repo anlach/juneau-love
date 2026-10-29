@@ -1,8 +1,8 @@
 ---
 type: user-story
 title: Guest gallery
-description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. No thumbnails, no delete in v1."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
+description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. The grid loads client-generated WebP thumbnails; the full-size original loads on demand. No delete in v1."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-28T06:07:06Z }
 ---
 
 # Guest gallery
@@ -22,11 +22,17 @@ them to the public internet.
    them client-side (a direct [users](../db/users.md) join is blocked
    by its self-only RLS; see [assets](../db/assets.md)).
 2. The FE passes the asset ids to [asset-url](../api/asset-url.md) in
-   one batched call and renders the returned presigned URLs
-   (15-minute TTL) as `<img>` sources, caching them until near expiry.
-3. To upload: choose an image → [asset-upload-url](../api/asset-upload-url.md)
-   returns a presigned PUT → the browser PUTs the bytes → the client
-   inserts the assets row. The new image appears in every approved
+   one batched call and renders the returned presigned **thumbnail**
+   URLs (15-minute TTL) as `<img>` sources, caching them until near
+   expiry. The same call returns the full-size original URL, which is
+   fetched only on demand (when a guest opens an image — a new tab in
+   v1; see [Gallery thumbnail rendering](../design/gallery-thumbnails.md)).
+   Rows without a thumbnail fall back to the full-size URL.
+3. To upload: choose an image → the browser downscales it to a WebP
+   thumbnail locally → [asset-upload-url](../api/asset-upload-url.md)
+   returns presigned PUTs for **both** the original and the thumbnail →
+   the browser PUTs both → the client inserts the assets row (both
+   keys). The new image (as its thumbnail) appears in every approved
    guest's gallery on their next load.
 
 ## Acceptance criteria
@@ -36,8 +42,12 @@ them to the public internet.
       gallery at all.
 - [ ] An approved guest sees every image (admin-seeded and
       guest-uploaded), newest first, with the uploader's name.
-- [ ] Guest upload works end to end (presigned PUT + row insert) within
-      the type/size limits, and the new row is visible to other guests.
+- [ ] Guest upload works end to end (presigned PUTs for original and
+      thumbnail + row insert) within the type/size limits, and the new
+      row is visible to other guests.
+- [ ] The grid loads the thumbnail, not the full-size object, for every
+      image that has one; full-size bytes are fetched only when a guest
+      opens an image.
 - [ ] No S3 key, bucket name, or credential appears in the repo, the
       client bundle, or any prerendered HTML.
 - [ ] A URL issued for one user's visible rows can never be obtained
@@ -60,10 +70,17 @@ them to the public internet.
   delete assets rows (only deleting the user row cascades), so
   photos uploaded before a rejection stay in the gallery — intended
   for v1.
-- **No thumbnails in v1:** full-size objects are served as-is; resizing
-  and derived assets are deferred (open question).
-- **Orphan objects** from failed uploads are invisible and tolerated in
-  v1 (see [asset-upload-url](../api/asset-upload-url.md)).
+- **Thumbnails are generated client-side at upload time** (browser
+  downscale → WebP, long edge 800 px, never upscaling, quality 0.8):
+  the grid's network weight stays small with no server-side image
+  processing. Why on-the-fly transforms (Supabase Storage
+  transforms, Hippius) were ruled out is in
+  [assets](../db/assets.md). Admin-seeded photos get their thumbnails
+  by a one-off admin backfill (same out-of-band convention as
+  seeding).
+- **Orphan objects** from failed uploads (original and/or
+  thumbnail) are invisible and tolerated in v1 (see
+  [asset-upload-url](../api/asset-upload-url.md)).
 
 ## Depends on
 

@@ -2,7 +2,7 @@
 type: component
 title: Shared components and conventions
 description: "The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid, the header account menu) plus the StateScreen component for the signed-in status screens."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T14:23:29Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-28T06:07:06Z }
 ---
 
 # Shared components
@@ -41,7 +41,7 @@ lived here: [Design tokens](/tokens.md).
 | `.msg` | Inline feedback line | `.msg.ok` (sage) / `.msg.err` (terracotta-peach mix); interactive feedback also gets `role="alert"` (one-shot) or `role="status"` (may update) |
 | `.badge` | Approval-state chip in the registrations table | `.pending` / `.approved` / `.rejected` tint the background |
 | `.table` | Data table (registrations) | header row in `.muted`, hairline row separators, `.actions` cell right-aligned with small buttons |
-| `.gallery-grid` | Photo grid | auto-fill `minmax(180px, 1fr)`; 4:3 `object-fit: cover` images; hatched `.placeholder` when no presigned URL is available; caption shows uploader (italic) + caption |
+| `.gallery-grid` | Photo grid | auto-fill `minmax(180px, 1fr)`; images at their natural aspect ratio (`width: 100%; height: auto` — no crop or stretch), the grid source is the thumbnail when present, wrapped in a plain link to the full-size original (`target="_blank" rel="noopener"`); hatched `.placeholder` keeps a fixed 4:3 box when no presigned URL is available; caption shows uploader (italic) + caption |
 | `.spread` | Row of actions under a card | centered, wrapping |
 | `.menu-btn` / `.menu` / `.menu-item` | Header account menu (icon button + dropdown) | button toggles `aria-expanded`; dropdown is `role="menu"` positioned absolute below the button, CSS-defaulted to right-aligned with it; the root layout clamps the opened menu's left position in JS (measured on open + `resize`) so it always stays inside the viewport with an 8px margin — required because on narrow screens the header wraps and the button can sit at the viewport's left edge, where a right-aligned menu would overflow off-screen; dropdown fill `--bg-elevated`, hairline gold border, same shadow as `.card`; entries are full-width `role="menuitem"`, hover tinted with a gold mix |
 
@@ -91,7 +91,8 @@ machinery, just GitHub Pages serving the file.
 
 - [Design tokens](/tokens.md)
 - [Access by approval status](../stories/access-by-approval-status.md)
-- [Guest gallery](../stories/guest-gallery.md) (gallery grid),
+- [Guest gallery](../stories/guest-gallery.md) (gallery grid,
+  [Gallery thumbnail rendering](/gallery-thumbnails.md)),
   [Review registrations](../stories/review-registrations.md) (table),
   [Change display name](../stories/change-display-name.md) (account menu,
   change-name page)

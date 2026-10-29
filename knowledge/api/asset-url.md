@@ -1,9 +1,8 @@
 ---
 type: edge-function
 title: asset-url (presigned image GET URLs)
-description: "Edge function that exchanges asset ids for short-lived (15-min) presigned S3 GET URLs — but only for rows the caller's RLS allows. The only way browser code ever sees an image byte."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-18T16:59:45Z }
-verified: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-20T07:14:32Z }
+description: "Edge function that exchanges asset ids for short-lived (15-min) presigned S3 GET URLs — for the original and, when present, its thumbnail — but only for rows the caller's RLS allows. The only way browser code ever sees an image byte."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T18:43:43Z }
 ---
 
 # asset-url
@@ -17,8 +16,8 @@ signs **only** for rows the caller's RLS can read.
 Why an edge function: S3 credentials cannot live in a static site's
 browser, and `adapter-static` means there is no server at runtime to
 sign on. The function is kept light for the free tier: batched, stateless,
-no transforms (thumbnails are out of scope, see
-[assets](../db/assets.md)).
+no image processing — it signs, it does not resize (thumbnails are
+derived client-side, see [assets](../db/assets.md)).
 
 ## Contract
 
@@ -36,19 +35,22 @@ Content-Type: application/json
 2. Query [assets](../db/assets.md) using a client built from the **anon
    key plus the caller's Authorization header**, so RLS — not function
    logic — decides visibility:
-   `select id, s3_key, content_type where id in (...)`. Rows the caller
-   may not see simply do not come back.
-3. For each returned row, sign a presigned GET: 15-minute TTL,
-   `response-content-type` pinned to the row's `content_type`.
-4. Return one entry per id that came back. Unknown or not-visible ids
-   are **omitted**, never listed as errors — the existence of images a
-   caller may not see is never disclosed.
+   `select id, s3_key, thumb_s3_key, content_type where id in (...)`.
+   Rows the caller may not see simply do not come back.
+3. For each returned row, sign presigned GETs with a 15-minute TTL:
+   the original, with `response-content-type` pinned to the row's
+   `content_type`, and — when `thumb_s3_key` is present — the
+   thumbnail, pinned to `image/webp`.
+4. Return one entry per id that came back: `asset_id`, `url`,
+   `expires_at`, and `thumb_url` when the row has a thumbnail. Unknown
+   or not-visible ids are **omitted**, never listed as errors — the
+   existence of images a caller may not see is never disclosed.
 
 ## Responses
 
 | Status | Body | When |
 |---|---|---|
-| 200 | `{ urls: [ { asset_id, url, expires_at } ] }` | always for a valid session (possibly empty) |
+| 200 | `{ urls: [ { asset_id, url, thumb_url?, expires_at } ] }` | always for a valid session (possibly empty) |
 | 400 | `{ error: "bad_request" }` | empty list or more than 100 ids |
 | 401 | `{ error: "unauthorized" }` | no valid session |
 
@@ -56,7 +58,10 @@ Content-Type: application/json
 
 - Call **per gallery load**, batched — not per image; chunk the ids
   into several calls once the gallery passes 100 images. Cache the
-  returned URLs client-side until shortly before `expires_at`.
+  returned URLs client-side until shortly before `expires_at`. Render
+  the **thumbnail** URL as `<img src>`; the full-size `url` is fetched
+  only when the guest opens the image, and rows without `thumb_url`
+  fall back to it.
 - Never bake a presigned URL into prerendered HTML (`adapter-static`
   rule): the gallery renders client-side after the session check
   ([Access by approval status](../stories/access-by-approval-status.md)).

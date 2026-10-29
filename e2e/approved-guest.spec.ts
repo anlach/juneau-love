@@ -8,6 +8,8 @@ import {
 	confirmEmail,
 	deleteAuthUser,
 	deleteAssetsForUser,
+	getAssetsForUser,
+	getStorageObject,
 	getUserRow,
 	setUserStatus,
 	REST_URL,
@@ -117,6 +119,22 @@ test.describe('approved guest', () => {
 			await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
 			await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
 
+			// Capture the gallery's batched asset-url responses: the one that
+			// carries the new row's signed thumbnail URL is the contract under
+			// test ({ urls: [{ asset_id, url, thumb_url?, expires_at }] }).
+			let thumbEntry: { asset_id: string; url: string; thumb_url: string } | undefined;
+			page.on('response', (res) => {
+				if (res.request().method() !== 'POST' || !res.url().includes('/functions/v1/asset-url'))
+					return;
+				void res
+					.json()
+					.then((body) => {
+						const entry = (body?.urls ?? []).find((u) => typeof u.thumb_url === 'string');
+						if (entry) thumbEntry = entry;
+					})
+					.catch(() => {});
+			});
+
 			const [fileChooser] = await Promise.all([
 				page.waitForEvent('filechooser'),
 				page.getByRole('button', { name: /add a photo/i }).click()
@@ -126,6 +144,56 @@ test.describe('approved guest', () => {
 			// Success message, then the photo renders from the presigned GET URL.
 			await expect(page.getByText(/added — thank you/i)).toBeVisible();
 			await expect(page.getByRole('img', { name: /a shared photo/i })).toBeVisible();
+
+			// The row carries both object keys: the original under
+			// uploads/<user_id>/ and the client-generated thumbnail under
+			// thumbs/<user_id>/…webp, with the original's type and size.
+			const row = await getUserRow(GUEST_EMAIL);
+			if (!row) throw new Error('guest user row missing');
+			const assets = await getAssetsForUser(row.id);
+			expect(assets).toHaveLength(1);
+			expect(assets[0].s3_key).toMatch(new RegExp(`^uploads/${row.id}/`));
+			expect(assets[0].thumb_s3_key).toMatch(new RegExp(`^thumbs/${row.id}/.+\\.webp$`));
+			expect(assets[0].content_type).toBe('image/png');
+			expect(assets[0].byte_size).toBe(PNG_1X1.length);
+
+			// The thumbnail object exists in the private bucket and is a real
+			// WebP (browser-downscaled), not a copy of the original PNG.
+			const thumbObj = await getStorageObject(assets[0].thumb_s3_key!);
+			expect(thumbObj.status).toBe(200);
+			expect(thumbObj.headers.get('content-type')).toContain('image/webp');
+			const bytes = new Uint8Array(await thumbObj.arrayBuffer());
+			expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('RIFF');
+			expect(String.fromCharCode(...bytes.slice(8, 12))).toBe('WEBP');
+
+			// The grid renders the thumbnail: the <img> src is exactly the
+			// thumb_url asset-url signed for the row — not the full-size url.
+			const img = page.getByRole('img', { name: /a shared photo/i });
+			await expect
+				.poll(() => thumbEntry?.asset_id, { timeout: 10_000 })
+				.toBe(assets[0].id);
+			await expect(img).toHaveAttribute('src', thumbEntry!.thumb_url);
+			expect(thumbEntry!.thumb_url).not.toBe(thumbEntry!.url);
+
+			// The grid shows the thumbnail at its natural aspect ratio
+			// (width-constrained, never stretched or cropped into a fixed
+			// box): rendered ratio == the thumbnail's own ratio.
+			const rect = await img.evaluate(
+				(el) =>
+					new Promise<{ w: number; h: number }>((resolve) => {
+						const done = () => {
+							const r = el.getBoundingClientRect();
+							resolve({ w: r.width, h: r.height });
+							};
+						if (el.complete && el.naturalWidth > 0) done();
+						else el.addEventListener('load', done, { once: true });
+					})
+			);
+			const [natW, natH] = await img.evaluate(
+				(el) => [el.naturalWidth, el.naturalHeight] as [number, number]
+			);
+			expect(natW).toBeGreaterThan(0);
+			expect(rect.w / rect.h).toBeCloseTo(natW / natH, 1);
 		} finally {
 			const row = await getUserRow(GUEST_EMAIL);
 			if (row) await deleteAssetsForUser(row.id);
