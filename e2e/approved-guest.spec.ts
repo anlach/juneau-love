@@ -223,14 +223,18 @@ async function makeApprovedUser(name: string): Promise<string> {
 test.describe('photo download', () => {
 	/** Upload one 1×1 PNG through the gallery UI and wait for it in the grid. */
 	async function uploadPhoto(page: Page, name: string): Promise<void> {
+		// Count the rendered cells up front: the alt is shared by every
+		// captionless row, so a role lookup is only unique for the first.
+		const before = await page.getByRole('img', { name: /a shared photo/i }).count();
 		const [fileChooser] = await Promise.all([
 			page.waitForEvent('filechooser'),
 			page.getByRole('button', { name: /add a photo/i }).click()
 		]);
 		await fileChooser.setFiles([{ name, mimeType: 'image/png', buffer: PNG_1X1 }]);
-		// Success message, then the photo renders from its presigned URL.
+		// Success message, then the new cell renders its presigned image —
+		// which also means its signed URL landed (the checkbox is enabled).
 		await expect(page.getByText(/added — thank you/i)).toBeVisible();
-		await expect(page.getByRole('img', { name: /a shared photo/i })).toBeVisible();
+		await expect(page.getByRole('img', { name: /a shared photo/i })).toHaveCount(before + 1);
 	}
 
 	async function openGallery(page: Page): Promise<void> {
