@@ -1,4 +1,8 @@
-import { test, expect } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test, expect, type Page } from '@playwright/test';
 import {
 	openAuthLink,
 	generateLink,
@@ -209,6 +213,125 @@ async function makeApprovedUser(name: string): Promise<string> {
 	await setUserStatus(email, 'approved'); // gate 2 (admin approval)
 	return email;
 }
+
+/**
+ * Gallery photo download: hovering a cell reveals a checkbox; selecting one
+ * enables the Download button and keeps every checkbox visible; Download
+ * yields the original file for a single selection, or one zip containing
+ * every selected original for several.
+ */
+test.describe('photo download', () => {
+	/** Upload one 1×1 PNG through the gallery UI and wait for it in the grid. */
+	async function uploadPhoto(page: Page, name: string): Promise<void> {
+		const [fileChooser] = await Promise.all([
+			page.waitForEvent('filechooser'),
+			page.getByRole('button', { name: /add a photo/i }).click()
+		]);
+		await fileChooser.setFiles([{ name, mimeType: 'image/png', buffer: PNG_1X1 }]);
+		// Success message, then the photo renders from its presigned URL.
+		await expect(page.getByText(/added — thank you/i)).toBeVisible();
+		await expect(page.getByRole('img', { name: /a shared photo/i })).toBeVisible();
+	}
+
+	async function openGallery(page: Page): Promise<void> {
+		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
+		await expect(page).toHaveURL('/');
+		await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
+		await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
+	}
+
+	test('selecting one photo downloads the original file, not a zip', async ({
+		page
+	}) => {
+		try {
+			await openGallery(page);
+			await uploadPhoto(page, 'e2e-single.png');
+
+			const figure = page.locator('figure').first();
+			const checkbox = figure.getByRole('checkbox');
+			const download = page.getByRole('button', { name: 'Download' });
+
+			// Nothing selected: Download is disabled and the checkbox is
+			// hidden until the cell is hovered.
+			await expect(download).toBeDisabled();
+			await expect(checkbox).toHaveCSS('opacity', '0');
+
+			// Hovering the cell reveals the checkbox; checking it selects the
+			// photo and enables Download.
+			await figure.hover();
+			await expect(checkbox).toHaveCSS('opacity', '1');
+			await checkbox.click();
+			await expect(download).toBeEnabled();
+
+			// Downloading the single selection saves the original bytes
+			// directly — no zip wrapper.
+			const [downloadEvent] = await Promise.all([
+				page.waitForEvent('download'),
+				download.click()
+			]);
+			expect(downloadEvent.suggestedFilename()).toMatch(/\.png$/);
+			const bytes = await fs.readFile((await downloadEvent.path())!);
+			expect(Buffer.compare(bytes, PNG_1X1)).toBe(0);
+		} finally {
+			const row = await getUserRow(GUEST_EMAIL);
+			if (row) await deleteAssetsForUser(row.id);
+		}
+	});
+
+	test('selecting several photos downloads one zip with every original inside', async ({
+		page
+	}) => {
+		try {
+			await openGallery(page);
+			await uploadPhoto(page, 'e2e-first.png');
+			await uploadPhoto(page, 'e2e-second.png');
+
+			const figures = page.locator('figure');
+			await expect(figures).toHaveCount(2);
+			const first = figures.nth(0).getByRole('checkbox');
+			const second = figures.nth(1).getByRole('checkbox');
+			const download = page.getByRole('button', { name: 'Download' });
+
+			await expect(download).toBeDisabled();
+
+			// Hover reveals the first checkbox; selecting it keeps ALL
+			// checkboxes visible, so the second can be checked without
+			// hovering its cell.
+			await figures.nth(0).hover();
+			await first.click();
+			await expect(second).toHaveCSS('opacity', '1');
+			await second.click();
+			await expect(download).toBeEnabled();
+
+			// Downloading several selections saves one zip archive.
+			const [downloadEvent] = await Promise.all([
+				page.waitForEvent('download'),
+				download.click()
+			]);
+			expect(downloadEvent.suggestedFilename()).toMatch(/\.zip$/);
+			const zipPath = (await downloadEvent.path())!;
+			expect((await fs.readFile(zipPath)).subarray(0, 4).toString()).toBe('PK\x03\x04');
+
+			// The archive is a valid zip holding both originals, byte for byte.
+			const dest = await fs.mkdtemp(path.join(os.tmpdir(), 'juneau-zip-'));
+			execFileSync('python3', ['-m', 'zipfile', '-e', zipPath, dest]);
+			const entries = (await fs.readdir(dest)).sort();
+			expect(entries).toHaveLength(2);
+			for (const entry of entries)
+				expect(
+					Buffer.compare(await fs.readFile(path.join(dest, entry)), PNG_1X1)
+				).toBe(0);
+
+			// Deselecting everything disables the button again.
+			await second.click();
+			await first.click();
+			await expect(download).toBeDisabled();
+		} finally {
+			const row = await getUserRow(GUEST_EMAIL);
+			if (row) await deleteAssetsForUser(row.id);
+		}
+	});
+});
 
 test.describe('guest_names view backstop', () => {
 	/**
