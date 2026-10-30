@@ -67,6 +67,11 @@ Content-Type: application/json
   ([Access by approval status](../stories/access-by-approval-status.md)).
 - A presigned URL is a bearer credential: treat it as a short-lived
   ticket, never persist it beyond the page session.
+- **Download reuse:** the [Download photos](../stories/download-photos.md)
+  flow consumes the same cached full-size URLs — the browser `fetch`es
+  the selected originals (the S3 endpoint answers any-origin fetches)
+  and saves one file (single selection) or a client-built zip
+  (several). No extra call to this function, and no new endpoint.
 
 ## Enforcement layers
 

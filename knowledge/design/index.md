@@ -1,5 +1,6 @@
 # component
 
+* [Gallery selection & download UI](selection-download.md) - Per-cell checkbox in the gallery grid (hover- or focus-revealed, always visible while any selection is active) and the Download button in the gallery toolbar — the presentation layer for the download flow.
 * [Shared components and conventions](components.md) - The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid, the header account menu) plus the StateScreen component for the signed-in status screens.
 
 # design-decision
