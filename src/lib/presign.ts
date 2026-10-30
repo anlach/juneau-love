@@ -37,3 +37,8 @@ export function cacheUrl(
 export function clearCache(): void {
 	cache.clear();
 }
+
+/** Drop one entry (its row was deleted — the bytes are gone with it). */
+export function dropCached(assetId: string): void {
+	cache.delete(assetId);
+}

@@ -214,15 +214,25 @@ export function jwtSub(authorization: string | null): string | null {
 /**
  * PostgREST call as the calling user (anon apikey + the user's verified JWT)
  * so RLS applies on their behalf. Used by the asset functions to look up
- * rows the user may actually see — the security boundary is the policy,
- * not the code. Returns null data on a network-level failure (res null).
+ * rows the user may actually see (GET) or to delete rows on their behalf
+ * (DELETE, with `prefer: "return=representation"` — the body is then the
+ * list of rows the policy actually let go; RLS-silent denials simply come
+ * back as missing rows). The security boundary is the policy, not the code.
+ * Returns null on a network-level failure (res null).
  */
 export async function restAsUser(
   path: string,
   userJwt: string,
+  opts?: { method?: "GET" | "DELETE"; prefer?: string },
 ): Promise<{ status: number; data: unknown } | null> {
+  const headers: Record<string, string> = {
+    apikey: ANON_KEY,
+    authorization: `Bearer ${userJwt}`,
+  };
+  if (opts?.prefer) headers.prefer = opts.prefer;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: ANON_KEY, authorization: `Bearer ${userJwt}` },
+    method: opts?.method ?? "GET",
+    headers,
   }).catch(() => null);
   if (!res) return null;
   const data = await res.json().catch(() => null);

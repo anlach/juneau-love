@@ -60,8 +60,9 @@ from a real browser.
 
 ## Applies to
 
-All five functions — send-login-link, notify-registration,
-registration-decision, asset-url, asset-upload-url (commit `0e7c47b`).
+All six functions — send-login-link, notify-registration,
+registration-decision, asset-url, asset-upload-url, asset-delete
+(commit `0e7c47b`; asset-delete added with the delete feature).
 Any new browser-called function must be wrapped the same way.
 
 ## Depends on

@@ -1,7 +1,7 @@
 ---
 type: user-story
 title: Guest gallery
-description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. The grid loads client-generated WebP thumbnails; the full-size original loads on demand. No delete in v1."
+description: "Approved guests share a gallery of images stored in a private S3 bucket — admin-seeded and guest-uploaded — with bytes reaching the browser only via short-lived presigned URLs. The grid loads client-generated WebP thumbnails; the full-size original loads on demand. Uploaders and admins can delete photos."
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-28T06:07:06Z }
 ---
 
@@ -64,8 +64,11 @@ them to the public internet.
 - **Upload limits (v1):** `image/jpeg`, `image/png`, `image/webp`;
   5 MB max; object key chosen server-side
   (`uploads/<user_id>/<uuid>`).
-- **No delete in v1:** no client UPDATE/DELETE on assets; removal is
-  out-of-band (S3 object, then row).
+- **Delete is scoped, not free:** uploaders delete their own photos,
+  admins any photo ([Delete photos](delete-photos.md)) — the boundary
+  is the RLS DELETE policy on [assets](../db/assets.md), and the
+  [asset-delete](../api/asset-delete.md) function also removes the S3
+  objects behind the rows. No client UPDATE.
 - **A rejected uploader's photos remain:** status changes never
   delete assets rows (only deleting the user row cascades), so
   photos uploaded before a rejection stay in the gallery — intended
@@ -85,5 +88,6 @@ them to the public internet.
 ## Depends on
 
 - [assets](../db/assets.md), [users](../db/users.md)
-- [asset-url](../api/asset-url.md), [asset-upload-url](../api/asset-upload-url.md)
+- [asset-url](../api/asset-url.md), [asset-upload-url](../api/asset-upload-url.md), [asset-delete](../api/asset-delete.md)
+- [Delete photos](delete-photos.md)
 - [Access by approval status](/access-by-approval-status.md)

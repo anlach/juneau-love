@@ -17,7 +17,7 @@ without asking the uploader.
 1. An approved guest opens the gallery ([Guest
    gallery](/guest-gallery.md)). Hovering a cell — or keyboard-focusing
    it — reveals a checkbox in the corner of the image
-   ([Selection & download UI](../design/selection-download.md)).
+   ([Selection & batch-actions UI](../design/selection-actions.md)).
 2. Checking a checkbox enables the **Download** button in the gallery
    toolbar and keeps **every** checkbox in the grid visible, so other
    photos can be selected without hovering each one. A `<N> selected`
@@ -85,5 +85,5 @@ without asking the uploader.
 ## Depends on
 
 - [Guest gallery](/guest-gallery.md)
-- [Selection & download UI](../design/selection-download.md)
+- [Selection & batch-actions UI](../design/selection-actions.md)
 - [assets](../db/assets.md), [asset-url](../api/asset-url.md)

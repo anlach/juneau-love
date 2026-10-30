@@ -86,7 +86,7 @@ user, approve the row, insert the admin role in the SQL editor) — see
 
 ### Deploying edge functions
 
-**Automated:** the same workflow (push to main) deploys all five functions,
+**Automated:** the same workflow (push to main) deploys all six functions,
 every time (idempotent). Manual fallback (same one-time setup as above —
 CLI + link): secrets first, then deploy:
 
@@ -101,6 +101,7 @@ supabase functions deploy notify-registration --no-verify-jwt
 supabase functions deploy registration-decision
 supabase functions deploy asset-url
 supabase functions deploy asset-upload-url
+supabase functions deploy asset-delete
 ```
 
 The S3 secrets are the Hippius credentials for the private `juneau-assets`
