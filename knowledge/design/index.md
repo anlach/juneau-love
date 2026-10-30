@@ -1,11 +1,11 @@
 # component
 
-* [Gallery selection & batch-actions UI](selection-actions.md) - Per-cell checkbox in the gallery grid (hover- or focus-revealed, always visible while any selection is active) and the toolbar action group — Download, plus Delete enabled only when every selected row is deletable by the caller — the presentation layer for both batch actions.
+* [Gallery selection & batch-actions UI](selection-actions.md) - Per-cell checkbox in the gallery grid (hover- or focus-revealed, always visible while any selection is active) and the toolbar action group — Download, plus Delete with its own enablement — the presentation layer for both batch actions.
 * [Shared components and conventions](components.md) - The class-based component kit in src/app.css (frame/header/nav, card, buttons, fields, messages, badges, table, gallery grid, the header account menu) plus the StateScreen component for the signed-in status screens.
 
 # design-decision
 
-* [Gallery thumbnail rendering](gallery-thumbnails.md) - The gallery grid shows the client-generated WebP thumbnail at its natural aspect ratio — width-constrained, never cropped or stretched — and 'opening an image' is a plain link that opens the full-size original in a new tab. Rows without a thumbnail fall back to the full-size URL.
+* [Gallery thumbnail rendering](gallery-thumbnails.md) - The gallery grid shows the client-generated WebP thumbnail at its natural aspect ratio — width-constrained, never cropped or stretched — in a box that hugs the thumbnail and centers vertically in its row; 'opening an image' is a plain link that opens the full-size original in a new tab. Rows without a thumbnail fall back to the full-size URL.
 * [What renders where (prerendered vs client-rendered)](prerender.md) - Only the public landing / is prerendered; every session- or status-dependent route is client-rendered behind the adapter-static SPA fallback (404.html), so no user-specific data ever reaches prerendered HTML.
 
 # design-token

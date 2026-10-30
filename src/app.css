@@ -356,6 +356,10 @@ a:not(.btn):hover {
 	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 	gap: 1rem;
 	margin-top: 1.5rem;
+	/* Boxes hug their content (image + caption) instead of stretching to
+	   the row height; the shorter boxes — landscape photos in a row with
+	   taller ones — center vertically in the row. */
+	align-items: center;
 }
 
 .gallery-grid figure {
