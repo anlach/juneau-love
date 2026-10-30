@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { supabase } from '#lib/supabase';
 	import { auth } from '#lib/session.svelte.ts';
-	import { cacheUrl, getCached } from '#lib/presign';
+	import { cacheUrl, getCached, dropCached } from '#lib/presign';
 	import { functionErrorCode } from '#lib/fn-error';
 	import StateScreen from '#lib/components/StateScreen.svelte';
 	import JSZip from 'jszip';
@@ -34,12 +34,30 @@
 	let uploadMsg = $state<{ tone: 'ok' | 'err'; text: string } | null>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
 
-	// Download selection (knowledge/stories/download-photos.md): ids of the
-	// checked cells. While non-empty the grid keeps every checkbox visible.
+	// Selection (knowledge/stories/download-photos.md, delete-photos.md):
+	// ids of the checked cells; one selection drives both the Download and
+	// the Delete toolbar buttons. While non-empty the grid keeps every
+	// checkbox visible.
 	let selectedIds = $state<string[]>([]);
 	let downloading = $state(false);
 	let downloadMsg = $state<{ tone: 'ok' | 'err'; text: string } | null>(null);
+	let deleting = $state(false);
+	let deleteMsg = $state<{ tone: 'ok' | 'err'; text: string } | null>(null);
 	const selecting = $derived(selectedIds.length > 0);
+
+	// The delete gate mirrors the BE rule (knowledge/db/assets.md): own
+	// rows, or any row for an admin. In v1 only the admin role holds
+	// permissions (knowledge/db/rbac.md), so a non-empty permission set is
+	// the admin marker.
+	const myId = $derived(auth.profile?.id ?? null);
+	const isAdmin = $derived(auth.kind === 'ready' && auth.perms.length > 0);
+	const canDeleteSelection = $derived(
+		selectedIds.length > 0 &&
+			selectedIds.every((id) => {
+				const a = assets.find((x) => x.id === id);
+				return !!a && (isAdmin || a.user_id === myId);
+			})
+	);
 
 	const status = $derived(auth.kind === 'ready' ? auth.profile?.status ?? null : null);
 	const name = $derived(auth.profile?.display_name ?? undefined);
@@ -239,6 +257,52 @@
 		}
 	}
 
+	// ---- delete ----
+
+	async function onDelete() {
+		if (deleting || !selectedIds.length) return;
+		const count = selectedIds.length;
+		// Destructive and final — one confirmation for the whole batch
+		// (knowledge/design/selection-actions.md).
+		if (!confirm(`Delete ${count} selected photo${count === 1 ? '' : 's'}? This can’t be undone.`))
+			return;
+
+		deleting = true;
+		deleteMsg = null;
+		const ids = [...selectedIds];
+		try {
+			const { data, error, response } = await supabase.functions.invoke('asset-delete', {
+				body: { asset_ids: ids }
+			});
+			if (error || !data) {
+				const code = await functionErrorCode(response);
+				deleteMsg = {
+					tone: 'err',
+					text:
+						code === 'unavailable'
+							? 'Deleting isn’t available in this environment right now.'
+							: 'We couldn’t delete those photos. Please try again.'
+				};
+				return;
+			}
+			// The response is the source of truth: it lists only the rows the
+			// RLS actually let go. Everything else stays selected, so a retry
+			// doesn't force re-checking (knowledge/stories/delete-photos.md).
+			const deleted = new Set<string>(data.deleted ?? []);
+			for (const id of deleted) dropCached(id);
+			assets = assets.filter((a) => !deleted.has(a.id));
+			selectedIds = selectedIds.filter((id) => !deleted.has(id));
+			deleteMsg =
+				deleted.size < ids.length
+					? { tone: 'err', text: 'Some photos couldn’t be deleted. Please try again.' }
+					: { tone: 'ok', text: `Deleted ${deleted.size} photo${deleted.size === 1 ? '' : 's'}.` };
+		} catch {
+			deleteMsg = { tone: 'err', text: 'We couldn’t delete those photos. Please try again.' };
+		} finally {
+			deleting = false;
+		}
+	}
+
 	async function onPickFile(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
@@ -359,7 +423,7 @@
 		{#if uploadMsg}
 			<span class="msg {uploadMsg.tone}">{uploadMsg.text}</span>
 		{/if}
-		<div class="download">
+		<div class="actions">
 			<button
 				class="btn ghost"
 				type="button"
@@ -368,11 +432,22 @@
 			>
 				{downloading ? 'Preparing…' : 'Download'}
 			</button>
+			<button
+				class="btn ghost danger"
+				type="button"
+				disabled={selectedIds.length === 0 || !canDeleteSelection || deleting}
+				onclick={onDelete}
+			>
+				{deleting ? 'Deleting…' : 'Delete'}
+			</button>
 			{#if selecting}
 				<span class="count">{selectedIds.length} selected</span>
 			{/if}
 			{#if downloadMsg}
 				<span class="msg {downloadMsg.tone}">{downloadMsg.text}</span>
+			{/if}
+			{#if deleteMsg}
+				<span class="msg {deleteMsg.tone}">{deleteMsg.text}</span>
 			{/if}
 		</div>
 	</div>
@@ -401,18 +476,16 @@
 					{/if}
 					<!-- Hover/focus reveals the checkbox; any active selection
 					     keeps all of them visible (knowledge/design/
-					     selection-download.md). Disabled without a signed URL. -->
+					     selection-actions.md). Disabled without a signed URL.
+					     Selection drives both Download and Delete, so the label
+					     names the action, not just the photo. -->
 					<input
 						type="checkbox"
 						class="select"
 						bind:group={selectedIds}
 						value={asset.id}
 						disabled={!urls[asset.id]}
-						aria-label={
-							asset.caption
-								? `Select ${asset.caption} for download`
-								: 'Select this photo for download'
-						}
+						aria-label={asset.caption ? `Select ${asset.caption}` : 'Select this photo'}
 					/>
 					<figcaption>
 						{#if names[asset.user_id]}
@@ -441,14 +514,14 @@
 		margin: 0.5rem 0 0.5rem;
 	}
 
-	.download {
+	.actions {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
 		margin-left: auto;
 	}
 
-	.download .msg {
+	.actions .msg {
 		margin-top: 0;
 	}
 

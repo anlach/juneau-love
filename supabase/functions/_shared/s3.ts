@@ -39,11 +39,38 @@ const encoder = new TextEncoder();
  * stale secret can no longer point a prod function at the dev machine
  * (the 2026-10-24 SITE_URL bug; the local-only S3_* keys were part of the
  * same poisoned batch — knowledge/platform/bugs.md).
+ *
+ * `endpoint` is the origin the BROWSER resolves the signed URLs against;
+ * `apiEndpoint` is the origin the edge function's own requests (S3 object
+ * cleanup) connect to. In prod they're identical; in dev they differ —
+ * the edge runtime runs in a bridge container where 127.0.0.1 is its own
+ * loopback, so the S3 protocol is reached through the same Kong the
+ * runtime reaches for PostgREST (the service it injects as SUPABASE_URL,
+ * e.g. http://kong:8000), under the same /storage/v1/s3 path. Note the
+ * signing host there is NOT the connection host: Kong forwards requests
+ * with X-Forwarded-Host: <service> and X-Forwarded-Port: 54321 (its
+ * external port), and storage-api rebuilds the SigV4 canonical host from
+ * those headers — so the function signs for <service>:54321 while
+ * connecting to <service>:8000 (see deleteS3Object).
  */
 const TOPOLOGY =
   JL_ENV === "dev"
     ? { endpoint: "http://127.0.0.1:54321", pathPrefix: "/storage/v1/s3", region: "local" }
     : { endpoint: "https://s3.hippius.com", pathPrefix: "", region: "decentralized" };
+
+/**
+ * Dev-only origin for the function's own bucket requests: the local Kong
+ * by service name, from the runtime-injected SUPABASE_URL — see the
+ * TOPOLOGY note. Falls back to the browser origin if SUPABASE_URL is
+ * unset (host-side tooling, e.g. supabase/tests/s3-presign.ts).
+ */
+const DEV_API_ENDPOINT = (() => {
+  const url = new URL(Deno.env.get("SUPABASE_URL") ?? "http://127.0.0.1:54321");
+  url.pathname = "/";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+})();
 
 /**
  * The local CLI stack's built-in S3 credentials: stable defaults printed
@@ -64,6 +91,12 @@ const LOCAL_CREDENTIALS = {
 export const S3 = {
   /** Origin (scheme://host[:port]) the object URLs are built against. */
   endpoint: TOPOLOGY.endpoint,
+  /**
+   * Origin the function's own bucket requests connect to (see the
+   * TOPOLOGY note): the local Kong by service name in dev, the browser
+   * origin elsewhere.
+   */
+  apiEndpoint: JL_ENV === "dev" ? DEV_API_ENDPOINT : TOPOLOGY.endpoint,
   /**
    * Origin-relative path between the origin and the bucket, e.g.
    * "/storage/v1/s3" for the local stack. Empty for Hippius. Both the
@@ -268,22 +301,26 @@ export async function presignS3ObjectUrl(input: PresignInput): Promise<{ url: st
 }
 
 /**
- * Headers for a direct (header-auth) request to the bucket — used by admin
- * tooling and tests (e.g. DeleteObject to clean up), never by the edge
- * functions themselves.
+ * Headers for a direct (header-auth) request to the bucket — used by the
+ * asset-delete function (DeleteObject cleanup) and by admin tooling and
+ * tests.
  *
  * `path` is the full signed path: origin-relative, including S3.pathPrefix
  * if configured (e.g. `/storage/v1/s3/juneau-assets/<key>` locally,
- * `/juneau-assets/<key>` on Hippius).
+ * `/juneau-assets/<key>` on Hippius). `endpoint` selects the origin the
+ * request is signed for (host header): the browser-facing origin by
+ * default; in-function requests pass S3.apiEndpoint (see deleteS3Object
+ * for the dev signing-host subtlety).
  */
 export async function signedRequestHeaders(
   method: string,
   path: string,
   bodyHash: string,
   extraHeaders: Record<string, string> = {},
+  endpoint: string = S3.endpoint,
 ): Promise<Record<string, string>> {
   if (!s3Configured()) throw new Error("S3 env not configured");
-  const host = new URL(S3.endpoint).host;
+  const host = new URL(endpoint).host;
   const timestamp = amzTimestamp();
   const signedHeaders: Record<string, string> = {
     host,
@@ -312,4 +349,37 @@ export async function signedRequestHeaders(
     authorization: `AWS4-HMAC-SHA256 Credential=${S3.accessKeyId}/${scope}, SignedHeaders=${Object.keys(signedHeaders).sort().join(";")}, Signature=${signature}`,
   };
   return headers;
+}
+
+/** sha256 of the empty body — DeleteObject sends no payload. */
+const EMPTY_BODY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+/**
+ * Delete one object from the private bucket (header-auth, no presigned
+ * URL — the caller is already the trusted edge function). Idempotent by
+ * intent: a 204/404 (S3 DeleteObject is a no-op on a missing key) counts
+ * as success, anything else is reported by status so the caller can log
+ * and move on (orphan objects are tolerated — see
+ * knowledge/stories/guest-gallery.md).
+ *
+ * Returns the HTTP status, or 0 on a network-level failure.
+ */
+export async function deleteS3Object(key: string): Promise<number> {
+  const endpoint = S3.apiEndpoint;
+  // In dev the signed host differs from the connection host: Kong
+  // forwards X-Forwarded-Host <service> + X-Forwarded-Port 54321, and
+  // storage-api rebuilds the SigV4 canonical host from those headers
+  // (see the TOPOLOGY note). Prod signs for the origin it connects to.
+  const signOrigin =
+    JL_ENV === "dev" ? `http://${new URL(endpoint).hostname}:54321` : endpoint;
+  const path = `${S3.pathPrefix}/${S3.bucket}/${key.split("/").map(rfc3986).join("/")}`;
+  const headers = await signedRequestHeaders("DELETE", path, EMPTY_BODY_SHA256, {}, signOrigin);
+  const res = await fetch(`${endpoint}${path}`, { method: "DELETE", headers }).catch(
+    () => null,
+  );
+  if (!res || res.status >= 400) {
+    const body = res ? (await res.text().catch(() => "")) : "network error";
+    console.error(`[s3] DeleteObject ${key} -> ${res?.status ?? 0} ${body.slice(0, 300)}`);
+  }
+  return res?.status ?? 0;
 }

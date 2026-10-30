@@ -281,7 +281,7 @@ Verified against the local Supabase CLI stack (GoTrue v2.197.0,
 `deploy.yml`): applies pending migrations (`supabase db push`, idempotent —
 tracked in `supabase_migrations.schema_migrations`, filename order), runs
 `supabase db advisors` (warn-only, no `--fail-on`, until findings are
-triaged), then redeploys **all five** edge functions (idempotent; the two
+triaged), then redeploys **all six** edge functions (idempotent; the two
 public ones keep `--no-verify-jwt`). Runs under the `supabase` GitHub
 environment (room for a required-reviewer gate later); `workflow_dispatch`
 re-runs it on demand. CI gating is inherited: branch protection on main

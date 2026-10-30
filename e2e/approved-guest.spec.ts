@@ -7,6 +7,7 @@ import {
 	openAuthLink,
 	generateLink,
 	GUEST_EMAIL,
+	ADMIN_EMAIL,
 	BASE_URL,
 	createUnconfirmedUser,
 	confirmEmail,
@@ -19,6 +20,7 @@ import {
 	REST_URL,
 	anonKey,
 	getAccessToken,
+	invokeFunction,
 	waitFor
 } from './helpers';
 
@@ -214,6 +216,30 @@ async function makeApprovedUser(name: string): Promise<string> {
 	return email;
 }
 
+/** Upload one 1×1 PNG through the gallery UI and wait for it in the grid. */
+async function uploadPhoto(page: Page, name: string): Promise<void> {
+	// Count the rendered cells up front: the alt is shared by every
+	// captionless row, so a role lookup is only unique for the first.
+	const before = await page.getByRole('img', { name: /a shared photo/i }).count();
+	const [fileChooser] = await Promise.all([
+		page.waitForEvent('filechooser'),
+		page.getByRole('button', { name: /add a photo/i }).click()
+	]);
+	await fileChooser.setFiles([{ name, mimeType: 'image/png', buffer: PNG_1X1 }]);
+	// Success message, then the new cell renders its presigned image —
+	// which also means its signed URL landed (the checkbox is enabled).
+	await expect(page.getByText(/added — thank you/i)).toBeVisible();
+	await expect(page.getByRole('img', { name: /a shared photo/i })).toHaveCount(before + 1);
+}
+
+/** Sign in the seeded guest and open the gallery page. */
+async function openGallery(page: Page): Promise<void> {
+	await openAuthLink(page, GUEST_EMAIL, 'magiclink');
+	await expect(page).toHaveURL('/');
+	await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
+	await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
+}
+
 /**
  * Gallery photo download: hovering a cell reveals a checkbox; selecting one
  * enables the Download button and keeps every checkbox visible; Download
@@ -221,29 +247,6 @@ async function makeApprovedUser(name: string): Promise<string> {
  * every selected original for several.
  */
 test.describe('photo download', () => {
-	/** Upload one 1×1 PNG through the gallery UI and wait for it in the grid. */
-	async function uploadPhoto(page: Page, name: string): Promise<void> {
-		// Count the rendered cells up front: the alt is shared by every
-		// captionless row, so a role lookup is only unique for the first.
-		const before = await page.getByRole('img', { name: /a shared photo/i }).count();
-		const [fileChooser] = await Promise.all([
-			page.waitForEvent('filechooser'),
-			page.getByRole('button', { name: /add a photo/i }).click()
-		]);
-		await fileChooser.setFiles([{ name, mimeType: 'image/png', buffer: PNG_1X1 }]);
-		// Success message, then the new cell renders its presigned image —
-		// which also means its signed URL landed (the checkbox is enabled).
-		await expect(page.getByText(/added — thank you/i)).toBeVisible();
-		await expect(page.getByRole('img', { name: /a shared photo/i })).toHaveCount(before + 1);
-	}
-
-	async function openGallery(page: Page): Promise<void> {
-		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
-		await expect(page).toHaveURL('/');
-		await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
-		await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
-	}
-
 	test('selecting one photo downloads the original file, not a zip', async ({
 		page
 	}) => {
@@ -332,6 +335,149 @@ test.describe('photo download', () => {
 			await expect(download).toBeDisabled();
 		} finally {
 			const row = await getUserRow(GUEST_EMAIL);
+			if (row) await deleteAssetsForUser(row.id);
+		}
+	});
+});
+
+/**
+ * Gallery photo delete: the selection that drives Download also drives the
+ * Delete button — but only when every selected row is deletable by the
+ * caller (own row, or admin). The BE refuses the rest: the RLS DELETE
+ * policy is the boundary, and the asset-delete function removes the S3
+ * objects behind whatever rows it did let go.
+ */
+test.describe('photo delete', () => {
+	/** Sign in `email`, open the gallery, upload one photo; return its row. */
+	async function uploadAs(page: Page, email: string, name: string) {
+		await openAuthLink(page, email, 'magiclink');
+		await expect(page).toHaveURL('/');
+		await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
+		await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
+		await uploadPhoto(page, name);
+		const row = await getUserRow(email);
+		if (!row) throw new Error(`${email} row missing`);
+		const assets = await getAssetsForUser(row.id);
+		if (assets.length !== 1) throw new Error(`expected 1 asset, got ${assets.length}`);
+		return { row, asset: assets[0] };
+	}
+
+	test('uploader deletes their own photo — row and S3 objects go', async ({ page }) => {
+		try {
+			await openGallery(page);
+			const { row, asset } = await uploadAs(page, GUEST_EMAIL, 'e2e-del-own.png');
+
+			const figure = page.locator('figure').first();
+			const checkbox = figure.getByRole('checkbox');
+			const del = page.getByRole('button', { name: 'Delete' });
+
+			// Nothing selected: Delete is disabled alongside Download.
+			await expect(del).toBeDisabled();
+
+			await figure.hover();
+			await checkbox.click();
+			await expect(del).toBeEnabled();
+
+			page.once('dialog', (d) => d.accept());
+			await del.click();
+
+			// Grid empties, the success message lands, and the row is gone.
+			await expect(page.getByText(/deleted 1 photo/i)).toBeVisible();
+			await expect(page.getByText(/no photos yet/i)).toBeVisible();
+			await expect.poll(async () => (await getAssetsForUser(row.id)).length).toBe(0);
+
+			// The S3 objects (original + thumbnail) are gone too — the local
+			// storage-api reports a missing object as 400 (real S3: 404).
+			expect([400, 404]).toContain((await getStorageObject(asset.s3_key)).status);
+			expect([400, 404]).toContain((await getStorageObject(asset.thumb_s3_key!)).status);
+		} finally {
+			const row = await getUserRow(GUEST_EMAIL);
+			if (row) await deleteAssetsForUser(row.id);
+		}
+	});
+
+	test('guest cannot delete another guest’s photo — button stays disabled, BE refuses', async ({
+		page
+	}) => {
+		const emailA = await makeApprovedUser('Owner Otto');
+		const emailB = await makeApprovedUser('Bystander Bea');
+		try {
+			const { row, asset } = await uploadAs(page, emailA, 'e2e-del-other.png');
+
+			// B signs in (replaces the session) and sees A's photo.
+			await openAuthLink(page, emailB, 'magiclink');
+			await expect(page).toHaveURL('/');
+			await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
+			await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
+			const figure = page.locator('figure').first();
+			await expect(figure.getByRole('img')).toBeVisible();
+
+			const checkbox = figure.getByRole('checkbox');
+			const download = page.getByRole('button', { name: 'Download' });
+			const del = page.getByRole('button', { name: 'Delete' });
+			await figure.hover();
+			await checkbox.click();
+
+			// Download is a read: any approved guest may. Delete is not.
+			await expect(download).toBeEnabled();
+			await expect(del).toBeDisabled();
+
+			// BE backstop 1: replay B's real session against the function.
+			const token = await waitFor(() => getAccessToken(page));
+			const fn = await invokeFunction('asset-delete', { asset_ids: [asset.id] }, token);
+			expect(fn.status).toBe(200);
+			expect(fn.data.deleted).toEqual([]);
+
+			// BE backstop 2: a hand-crafted Data API DELETE — scoped to the
+			// same RLS policy; a denial is silent (0 rows, no error). 204 =
+			// accepted (Prefer: return=representation would give 200).
+			const rest = await fetch(`${REST_URL}/assets?id=eq.${asset.id}`, {
+				method: 'DELETE',
+				headers: { apikey: anonKey(), Authorization: `Bearer ${token}` }
+			});
+			expect([200, 204]).toContain(rest.status);
+
+			// The photo is intact — row and bytes.
+			expect((await getAssetsForUser(row.id)).length).toBe(1);
+			expect((await getStorageObject(asset.s3_key)).status).toBe(200);
+		} finally {
+			const row = await getUserRow(emailA);
+			if (row) await deleteAssetsForUser(row.id);
+		}
+	});
+
+	test('admin can delete another guest’s photo', async ({ page }) => {
+		const emailA = await makeApprovedUser('Owner Otto');
+		try {
+			const { row, asset } = await uploadAs(page, emailA, 'e2e-del-admin.png');
+
+			// The admin (seeded, admin + guest roles) signs in over the same
+			// browser and sees the photo too.
+			await openAuthLink(page, ADMIN_EMAIL, 'magiclink');
+			await expect(page).toHaveURL('/');
+			await page.getByRole('navigation').getByRole('link', { name: 'Photos' }).click();
+			await expect(page.getByRole('heading', { name: /photos/i })).toBeVisible();
+			const figure = page.locator('figure').first();
+			await expect(figure.getByRole('img')).toBeVisible();
+
+			const checkbox = figure.getByRole('checkbox');
+			const del = page.getByRole('button', { name: 'Delete' });
+			await figure.hover();
+			await checkbox.click();
+
+			// Not the admin's own photo, yet Delete is enabled.
+			await expect(del).toBeEnabled();
+
+			page.once('dialog', (d) => d.accept());
+			await del.click();
+
+			await expect(page.getByText(/deleted 1 photo/i)).toBeVisible();
+			await expect(page.getByText(/no photos yet/i)).toBeVisible();
+			await expect.poll(async () => (await getAssetsForUser(row.id)).length).toBe(0);
+			expect([400, 404]).toContain((await getStorageObject(asset.s3_key)).status);
+			expect([400, 404]).toContain((await getStorageObject(asset.thumb_s3_key!)).status);
+		} finally {
+			const row = await getUserRow(emailA);
 			if (row) await deleteAssetsForUser(row.id);
 		}
 	});

@@ -166,8 +166,10 @@ the delete even if a future grant reopened DML on a definer view.
   presigned PUTs for each; the browser generates the thumbnail first,
   uploads both bytes, then the client inserts the row via PostgREST
   (INSERT policy below).
-- **No client UPDATE/DELETE in v1:** removal is out-of-band (see [guest
-  gallery](../stories/guest-gallery.md)).
+- **Delete (own or admin):** [asset-delete](../api/asset-delete.md)
+  removes the rows the caller's RLS allows (own rows, or any row for
+  an admin) and cleans up the S3 objects behind them; there is no
+  client UPDATE.
 
 # RLS
 
@@ -178,16 +180,20 @@ seeding work, consistent with [users](/users.md).
 |---|---|---|
 | `assets_read_approved` | SELECT | `using (public.is_approved())` |
 | `assets_insert_own` | INSERT | `with check (user_id = auth.uid() and public.is_approved())` |
+| `assets_delete_own_or_admin` | DELETE | `using (public.is_approved() and (user_id = auth.uid() or public.has_role('admin')))` |
 
 The INSERT predicate is deliberately gated on approval: a
 confirmed-but-pending user (who already holds a session from
 email-verification) must not be able to plant gallery rows that would
-appear to guests later. No UPDATE or DELETE policies in v1, and no
-policy for `anon` — unauthenticated, pending, and rejected users see
-zero rows and therefore can never obtain a presigned URL for any image.
+appear to guests later. The DELETE predicate is the deletion boundary
+for [asset-delete](../api/asset-delete.md): approved callers may delete
+their own rows, admins any row — and a hand-crafted Data API DELETE is
+scoped to the same predicate. No UPDATE policy, and no policy for
+`anon` — unauthenticated, pending, and rejected users see zero rows
+and therefore can never obtain a presigned URL for any image.
 
 **Data API grants:** `service_role` — all four; `authenticated` —
-`select, insert` (mirrors the policies, no `update`/`delete`);
+`select, insert, delete` (mirrors the policies, no `update`);
 `anon` — `select` only (zero rows, no anon policy). The `guest_names`
 view is pinned read-only for client roles: `select` to
 `authenticated` only, with the default-privilege DML revoked from

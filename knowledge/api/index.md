@@ -15,6 +15,7 @@
 
 # edge-function
 
+* [asset-delete (batch photo deletion)](asset-delete.md) - JWT-protected edge function that batch-deletes asset rows the caller's RLS allows (own rows, or any for an admin) and best-effort removes the S3 objects behind them; the response lists only the ids actually deleted, and a hand-crafted Data API DELETE hits the same predicate.
 * [asset-upload-url (presigned image upload)](asset-upload-url.md) - Edge function that issues one-off presigned S3 PUTs (15-min TTL) for an approved guest — one for the original, one for its client-generated WebP thumbnail — keys chosen server-side, content-type and size limits enforced up front.
 * [asset-url (presigned image GET URLs)](asset-url.md) - Edge function that exchanges asset ids for short-lived (15-min) presigned S3 GET URLs — for the original and, when present, its thumbnail — but only for rows the caller's RLS allows. The only way browser code ever sees an image byte.
 * [notify-registration (admin alert for new registrations)](notify-registration.md) - Publicly invokable edge function that emails every admin a new-registration alert with approve/reject deep links; idempotent via users.admin_notified_at, so each registration alerts at most once.

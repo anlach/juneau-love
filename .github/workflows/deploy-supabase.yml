@@ -68,7 +68,7 @@ jobs:
         run: npx supabase db advisors --linked --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy edge functions
-        # All five, every time (idempotent, avoids "forgot which one
+        # All six, every time (idempotent, avoids "forgot which one
         # changed"). send-login-link and notify-registration are the
         # public functions (called with no JWT): --no-verify-jwt persists
         # that setting.
@@ -78,3 +78,4 @@ jobs:
           npx supabase functions deploy registration-decision --project-ref "$SUPABASE_PROJECT_REF"
           npx supabase functions deploy asset-url --project-ref "$SUPABASE_PROJECT_REF"
           npx supabase functions deploy asset-upload-url --project-ref "$SUPABASE_PROJECT_REF"
+          npx supabase functions deploy asset-delete --project-ref "$SUPABASE_PROJECT_REF"
