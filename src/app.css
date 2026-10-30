@@ -75,8 +75,11 @@ body {
 	color: var(--color-plum);
 }
 
+/* Molle's only style is italic — font-style must be set or the browser
+   falls back to generic cursive (normal never matches an italic face). */
 .display {
-	font-family: 'Lavishly Yours', cursive;
+	font-family: 'Molle', cursive;
+	font-style: italic;
 }
 
 a:not(.btn) {

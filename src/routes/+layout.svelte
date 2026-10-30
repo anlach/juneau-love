@@ -1,5 +1,8 @@
 <script lang="ts">
 	import '@fontsource/lavishly-yours/latin.css';
+	// Molle's only Google Fonts style is italic, so the latin-400-italic
+	// entry point — plain `latin.css` is empty for this family.
+	import '@fontsource/molle/latin-400-italic.css';
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';

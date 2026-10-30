@@ -1,8 +1,8 @@
 ---
 type: design-token
 title: Design tokens (palette, typography, fonts)
-description: "The site's visual language: dark plum-ground theme built from the four-pair site palette (lilac text, peach primary actions), Bona Nova serif body + Lavishly Yours script display, and the font licensing note (Bona Nova is a local trial TTF until swapped for woff2)."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-22T20:15:00Z }
+description: "The site's visual language: dark plum-ground theme built from the four-pair site palette (lilac text, peach primary actions), Bona Nova serif body + Molle handwriting display for titles, and the font licensing note (Bona Nova is a local trial TTF until swapped for woff2)."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-30T18:02:19Z }
 ---
 
 # Design tokens
@@ -43,10 +43,17 @@ with plum text. `color-scheme: dark`; the `theme-color` meta is plum.
 | Role | Font | Notes |
 |---|---|---|
 | Body | `'Bona Nova'`, fallback Georgia / Times serif | 17px / 1.5 line-height, weight 400 (700 = bold, italic available) |
-| Display | `'Lavishly Yours'`, cursive | Headings / hero / brand via the `.display` class |
+| Display | `'Molle'`, cursive, forced `font-style: italic` | Headings / hero / brand via the `.display` class |
 
-- **Lavishly Yours** is bundled from npm (`@fontsource/lavishly-yours`,
-  imported in the root layout) — no external font dependency.
+- **Molle** is bundled from npm (`@fontsource/molle`, imported in the root
+  layout) — no external font dependency. Its only Google Fonts style is
+  italic (weight 400), so the import is the `latin-400-italic` entry point
+  (plain `latin.css` is empty for this family) and `.display` must set
+  `font-style: italic` — a normal-style request never matches an italic
+  face and would fall back to generic cursive.
+- **Lavishly Yours** (`@fontsource/lavishly-yours`) remains bundled and
+  imported in the root layout but is no longer referenced by any class —
+  kept installed on request, a candidate for removal.
 - **Bona Nova is a local trial**: full TTFs committed under `static/fonts/`
   (Regular / Italic / Bold) and loaded via `@font-face` with `font-display:
   swap`. **Before production these must be swapped for woff2 subsets**

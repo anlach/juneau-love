@@ -194,9 +194,11 @@ conventions live in `.agents/skills/juneau-knowledge/SKILL.md`.
 
 ## Notes
 
-- Two display fonts: "Lavishly Yours" (script, via `@fontsource/lavishly-yours`
-  imported in `src/routes/+layout.svelte`) and "Bona Nova" (serif body, local
+- Fonts: "Molle" (handwriting display, via `@fontsource/molle` imported in
+  `src/routes/+layout.svelte`) for titles, and "Bona Nova" (serif body, local
   trial TTFs in `static/fonts/` — swap for woff2 subsets before production).
+  "Lavishly Yours" (`@fontsource/lavishly-yours`) is still bundled but no
+  longer referenced.
 - The whole UI is client-rendered (SPA fallback `404.html`) except the public
   landing `/`, which is prerendered; no user-specific data ever renders
   server-side.
