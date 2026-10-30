@@ -1,8 +1,8 @@
 ---
 type: design-decision
 title: Gallery thumbnail rendering
-description: "The gallery grid shows the client-generated WebP thumbnail at its natural aspect ratio — width-constrained, never cropped or stretched — and 'opening an image' is a plain link that opens the full-size original in a new tab. Rows without a thumbnail fall back to the full-size URL."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-28T06:07:06Z }
+description: "The gallery grid shows the client-generated WebP thumbnail at its natural aspect ratio — width-constrained, never cropped or stretched — in a box that hugs the thumbnail and centers vertically in its row; 'opening an image' is a plain link that opens the full-size original in a new tab. Rows without a thumbnail fall back to the full-size URL."
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-30T18:41:08Z }
 ---
 
 # Gallery thumbnail rendering
@@ -24,6 +24,12 @@ storage and URL contracts are in [assets](../db/assets.md) and
   different ratios, and the previous fixed 4:3 `object-fit: cover` box
   cropped or distorted them — no uniform box (operator requirement,
   2026-10-27).
+- The figure **box hugs its content** — the image plus the caption, with
+  the caption's spacing unchanged — and `.gallery-grid`'s
+  `align-items: center` **centers the box vertically in its row** instead
+  of stretching it to the row height: in a row mixing aspect ratios the
+  shorter boxes (landscape photos) sit centered rather than leaving
+  blank background under the caption.
 - The hatched `.placeholder` (no presigned URL available) has no image
   to size from, so it keeps a fixed 4:3 box.
 - Thumbnails are 800 px long edge (downscale-only), so at cell widths
