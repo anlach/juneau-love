@@ -28,7 +28,7 @@
 	   These :root values are the shipped defaults; the /theme page writes
 	   the same custom properties over them at runtime (src/lib/theme.svelte.ts).
 	   See knowledge/design/tokens.md and theme-customization.md. */
-	--bg: #2a406e;
+	--bg: #1c2f59;
 	--text: #ccbdef;
 	--link: #5d9b8e;
 	--success: #a3c5ac;
@@ -54,12 +54,12 @@
 	   `calc(<name> * 1%)`. Each one is a % input on the /theme page. */
 	--card-mix: 12;
 	--muted-mix: 25;
-	--glow-alpha: 9;
+	--glow-alpha: 15;
 	--btn-secondary-alpha: 10;
 	--badge-tint: 25;
 	--link-hover-mix: 25;
 	--btn-primary-hover-mix: 20;
-	--btn-secondary-hover-mix: 25;
+	--btn-secondary-hover-mix: 80;
 	--btn-danger-hover-mix: 20;
 	--menu-hover-mix: 12;
 

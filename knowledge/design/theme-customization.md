@@ -17,10 +17,11 @@ consume — and a preview pane shows the effect immediately.
 - **Not gated.** Any visitor can open `/theme`. The theme is per-browser
   (localStorage), so an ungated page affects no shared state — opening it up
   costs nothing, and guests customizing their own view is the eventual
-  direction anyway. The **nav link "Theme" is shown to signed-in users only**
-  (root layout, after "Registrations"); signed-out visitors don't see it.
+  direction anyway. The **link "Theme" is shown to signed-in users only**, as
+  the first item in the account dropdown menu (root layout); signed-out
+  visitors don't see it.
 - Gating it later (e.g. an RBAC permission) is a one-line change in the root
-  layout nav.
+  layout menu.
 
 ## Page layout
 

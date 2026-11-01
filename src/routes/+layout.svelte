@@ -120,7 +120,6 @@
 			{#if hasPermission('registrations:read')}
 				<a href="/registrations">Registrations</a>
 			{/if}
-			<a href="/theme">Theme</a>
 			<span class="who">{name}</span>
 			<span class="account-menu">
 				<button
@@ -149,6 +148,14 @@
 						bind:this={menuEl}
 						style={menuLeft === undefined ? undefined : `left: ${menuLeft}px; right: auto`}
 					>
+						<a
+							role="menuitem"
+							class="menu-item"
+							href="/theme"
+							onclick={() => (menuOpen = false)}
+						>
+							Theme
+						</a>
 						<a
 							role="menuitem"
 							class="menu-item"

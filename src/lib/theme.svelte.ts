@@ -24,9 +24,9 @@ interface ThemeVar {
 /** Every theme control, keyed by a short name the page groups into sections. */
 export const THEME_VARS = {
 	// Page
-	bg: { var: '--bg', kind: 'color', def: '#2a406e' },
+	bg: { var: '--bg', kind: 'color', def: '#1c2f59' },
 	glow: { var: '--glow', kind: 'color', def: '#5d9b8e' },
-	'glow-alpha': { var: '--glow-alpha', kind: 'number', def: 9 },
+	'glow-alpha': { var: '--glow-alpha', kind: 'number', def: 15 },
 	'selection-bg': { var: '--selection-bg', kind: 'color', def: '#5d9b8e' },
 	'selection-text': { var: '--selection-text', kind: 'color', def: '#17263f' },
 	// Text
@@ -50,7 +50,7 @@ export const THEME_VARS = {
 	// Secondary button
 	'btn-secondary-fill': { var: '--btn-secondary-fill', kind: 'color', def: '#ccbdef' },
 	'btn-secondary-alpha': { var: '--btn-secondary-alpha', kind: 'number', def: 10 },
-	'btn-secondary-hover-mix': { var: '--btn-secondary-hover-mix', kind: 'number', def: 25 },
+	'btn-secondary-hover-mix': { var: '--btn-secondary-hover-mix', kind: 'number', def: 80 },
 	'btn-secondary-hover-mix-with': {
 		var: '--btn-secondary-hover-mix-with',
 		kind: 'color',
