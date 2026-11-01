@@ -7,6 +7,11 @@
 	// hand-crafted writes (knowledge/db/users.md).
 	const PARTY_MAX = 8;
 
+	// The number input's bound value is not ground truth: Svelte 5 coerces
+	// the DOM string, so an *empty* field becomes Number('') === 0 — and 0
+	// is a valid value here ("not coming"). The raw DOM value is what we
+	// validate; the binding exists only to prefill the field.
+	let input = $state<HTMLInputElement | null>(null);
 	let count = $state<number | ''>('');
 	let seeded = $state(false);
 	let busy = $state(false);
@@ -21,9 +26,8 @@
 
 	// Prefill once the profile has loaded — first paint is pre-session, so
 	// seed on the first settle. null (no RSVP yet, the column's default)
-	// stays an empty field, and clearing the field is not a way to
-	// un-RSVP: saving empty is refused and the saved number stands.
-	// (A number input binds a number — or '' while empty — in Svelte 5.)
+	// stays an empty field; clearing the field is not a way to un-RSVP
+	// (saving empty is refused and the saved number stands).
 	$effect(() => {
 		if (seeded) return;
 		const ps = profile?.party_size;
@@ -35,10 +39,12 @@
 
 	async function save() {
 		if (busy || !profile) return;
-		// An RSVP is a whole number of people, 0 to PARTY_MAX. Empty input
-		// (count === '') is refused for the same message as out-of-range.
-		const n = count === '' ? NaN : Number(count);
-		if (!Number.isInteger(n) || n < 0 || n > PARTY_MAX) {
+		// An RSVP is a whole number of people, 0 to PARTY_MAX. An empty
+		// field is refused for the same message as out-of-range, read
+		// from the DOM so "" is not mistaken for 0.
+		const raw = (input?.value ?? '').trim();
+		const n = Number(raw);
+		if (raw === '' || !Number.isInteger(n) || n < 0 || n > PARTY_MAX) {
 			formError = `Tell us how many of you are coming — 0 to ${PARTY_MAX}.`;
 			saved = false;
 			return;
@@ -97,6 +103,7 @@
 				How many of you are coming?
 				<input
 					bind:value={count}
+					bind:this={input}
 					type="number"
 					inputmode="numeric"
 					min="0"
