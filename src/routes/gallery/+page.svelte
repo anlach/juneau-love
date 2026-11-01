@@ -397,7 +397,7 @@
 		<p class="sub">Sign in (or register) to see the photos our guests have shared.</p>
 		<div class="spread">
 			<a class="btn" href="/login">Sign in</a>
-			<a class="btn ghost" href="/register">Register</a>
+			<a class="btn secondary" href="/register">Register</a>
 		</div>
 	</div>
 {:else if status === 'pending'}
@@ -425,7 +425,7 @@
 		{/if}
 		<div class="actions">
 			<button
-				class="btn ghost"
+				class="btn secondary"
 				type="button"
 				disabled={selectedIds.length === 0 || downloading}
 				onclick={onDownload}
@@ -433,7 +433,7 @@
 				{downloading ? 'Preparing…' : 'Download'}
 			</button>
 			<button
-				class="btn ghost danger"
+				class="btn secondary danger"
 				type="button"
 				disabled={selectedIds.length === 0 || !canDeleteSelection || deleting}
 				onclick={onDelete}
@@ -527,7 +527,7 @@
 
 	.count {
 		font-size: 0.95rem;
-		color: var(--muted);
+		color: var(--text-muted);
 		white-space: nowrap;
 	}
 

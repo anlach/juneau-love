@@ -20,7 +20,7 @@
 		<div class="spread">
 			<a class="btn" href="/rsvp">RSVP</a>
 			{#if hasPermission('registrations:read')}
-				<a class="btn ghost" href="/registrations">Review registrations</a>
+				<a class="btn secondary" href="/registrations">Review registrations</a>
 			{/if}
 		</div>
 	</div>
@@ -41,7 +41,7 @@
 		</p>
 		<div class="spread">
 			<a class="btn" href="/register">Register</a>
-			<a class="btn ghost" href="/login">I have an account</a>
+			<a class="btn secondary" href="/login">I have an account</a>
 		</div>
 	</section>
 {/if}
@@ -54,10 +54,10 @@
 		text-transform: uppercase;
 		letter-spacing: 0.35em;
 		font-size: 0.8rem;
-		color: var(--color-gold);
+		color: var(--glow);
 		margin-bottom: 0.5rem;
 	}
 	.sub {
-		color: var(--muted);
+		color: var(--text-muted);
 	}
 </style>

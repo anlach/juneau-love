@@ -159,12 +159,12 @@
 		{:else if !requestedRow}
 			<div class="card decision-banner">
 				<p>We couldn’t find that registration — it may already have been handled.</p>
-				<div class="spread"><button class="btn ghost" onclick={clearRequested}>Got it</button></div>
+				<div class="spread"><button class="btn secondary" onclick={clearRequested}>Got it</button></div>
 			</div>
 		{:else if requestedRow.status !== 'pending'}
 			<div class="card decision-banner">
 				<p><strong>{requestedRow.display_name}</strong> is already {requestedRow.status} — there’s nothing to do.</p>
-				<div class="spread"><button class="btn ghost" onclick={clearRequested}>Got it</button></div>
+				<div class="spread"><button class="btn secondary" onclick={clearRequested}>Got it</button></div>
 			</div>
 		{:else}
 			<div class="card decision-banner">
@@ -188,7 +188,7 @@
 					>
 						{requested.decision === 'approve' ? 'Approve' : 'Reject'}
 					</button>
-					<button class="btn ghost" onclick={clearRequested}>Not now</button>
+					<button class="btn secondary" onclick={clearRequested}>Not now</button>
 				</div>
 			</div>
 		{/if}
@@ -266,7 +266,7 @@
 	<div class="card center">
 		<h2 class="display" style="font-size: 2rem">Not available to you</h2>
 		<p class="sub">This page is only for the site’s administrators.</p>
-		<div class="spread"><a class="btn ghost" href="/">Back home</a></div>
+		<div class="spread"><a class="btn secondary" href="/">Back home</a></div>
 	</div>
 {/if}
 

@@ -56,7 +56,7 @@
 			for both the avid outdoorsperson and the more casual traveler.
 		</p>
 
-		<p class="note">
+		<p>
 			Note: Juneau is filled with tour companies and events catering to cruisers ad
 			nauseam. These are great options if you want bigger excursions or group experiences,
 			but this list is certainly not exhaustive and includes mostly free or (relatively)
@@ -221,7 +221,7 @@
 				title="Travel Juneau map (2019), a two-page PDF"
 			></iframe>
 			<div class="spread">
-				<a class="btn ghost" href="/juneau-map.pdf" download="juneau-map.pdf">
+				<a class="btn secondary" href="/juneau-map.pdf" download="juneau-map.pdf">
 					Download the map (PDF)
 				</a>
 			</div>
@@ -242,19 +242,11 @@
 	.subtitle {
 		margin: 0 0 1.75rem;
 		font-style: italic;
-		color: var(--muted);
+		color: var(--text-muted);
 	}
 
 	.guide p {
 		margin: 0 0 1rem;
-	}
-
-	.note {
-		border-left: 3px solid var(--color-gold);
-		background: color-mix(in srgb, var(--color-gold) 7%, transparent);
-		border-radius: 0 8px 8px 0;
-		padding: 0.6rem 1rem;
-		color: var(--muted);
 	}
 
 	.guide h2 {
@@ -284,8 +276,8 @@
 		display: block;
 		width: 100%;
 		height: 640px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
+		background: var(--bg-card);
 		border-radius: 12px;
+		box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
 	}
 </style>

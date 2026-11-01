@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { supabase } from '#lib/supabase';
 	import { auth, hasPermission, initAuth, signOut } from '#lib/session.svelte.ts';
+	import { initTheme } from '#lib/theme.svelte.ts';
 
 	let { children } = $props();
 
@@ -66,7 +67,10 @@
 		return () => window.removeEventListener('resize', place);
 	});
 
-	onMount(() => initAuth());
+	onMount(() => {
+		initAuth();
+		initTheme();
+	});
 
 	// Admin-notification fallback (knowledge/api/notify-registration.md):
 	// the register page fires notify-registration right after signup; this
@@ -116,6 +120,7 @@
 			{#if hasPermission('registrations:read')}
 				<a href="/registrations">Registrations</a>
 			{/if}
+			<a href="/theme">Theme</a>
 			<span class="who">{name}</span>
 			<span class="account-menu">
 				<button

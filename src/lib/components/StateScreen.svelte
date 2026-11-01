@@ -39,7 +39,7 @@
 			into your invitation.
 		</p>
 		<div class="spread">
-			<button class="btn ghost" disabled={checking} onclick={checkStatus}>
+			<button class="btn secondary" disabled={checking} onclick={checkStatus}>
 				{checking ? 'Checking…' : 'Check status'}
 			</button>
 		</div>
@@ -55,7 +55,7 @@
 		<h2 class="display" style="font-size: 2rem">Something went wrong</h2>
 		<p>{message ?? 'We could not load your account. Please try again.'}</p>
 		<div class="spread">
-			<button class="btn ghost" onclick={checkStatus}>Try again</button>
+			<button class="btn secondary" onclick={checkStatus}>Try again</button>
 		</div>
 	</div>
 {/if}

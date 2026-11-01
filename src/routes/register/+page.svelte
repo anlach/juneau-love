@@ -125,7 +125,7 @@
 			({profile?.status ?? '…'}).
 		</p>
 		<div class="spread">
-			<a class="btn ghost" href="/">Back home</a>
+			<a class="btn secondary" href="/">Back home</a>
 		</div>
 	</div>
 {:else if registered}
@@ -138,7 +138,7 @@
 		</p>
 		<p class="sub">Links in emails are how you get in.</p>
 		<div class="spread">
-			<a class="btn ghost" href="/">Back home</a>
+			<a class="btn secondary" href="/">Back home</a>
 		</div>
 	</div>
 {:else}

@@ -24,31 +24,108 @@
 :root {
 	color-scheme: dark;
 
-	/* Site palette — four primary/secondary pairs.
-	   See knowledge/design/color-palette.md. */
-	--color-gold: #a7923c;
-	--color-lilac: #c7c5cc;
-	--color-sage: #a3c5ac;
-	--color-plum: #311b29;
-	--color-terracotta: #c9692f;
-	--color-peach: #e3ab84;
-	--color-slate: #54697a;
-	--color-sand: #e1bfa4;
+	/* Theme base controls — named by what they are used for, never by hue.
+	   These :root values are the shipped defaults; the /theme page writes
+	   the same custom properties over them at runtime (src/lib/theme.svelte.ts).
+	   See knowledge/design/tokens.md and theme-customization.md. */
+	--bg: #2a406e;
+	--text: #ccbdef;
+	--link: #5d9b8e;
+	--success: #a3c5ac;
+	--error: #e8966a;
+	--btn-primary-bg: #ccbdef;
+	--btn-primary-text: #2a406e;
+	--btn-secondary-fill: #ccbdef;
+	--badge-pending-fill: #54697a;
+	--badge-pending-text: #ccbdef;
+	--selection-bg: #5d9b8e;
+	--selection-text: #17263f;
+	--glow: #5d9b8e;
+	--input-border: #54697a;
+	--table-border: #4f5c8b;
+	/* Colors each hover mixes toward. */
+	--link-hover-mix-with: #123514;
+	--btn-primary-hover-mix-with: #2a406e;
+	--btn-secondary-hover-mix-with: #2a406e;
+	--btn-danger-hover-mix-with: #e8966a;
+	--menu-hover-mix-with: #5d9b8e;
 
-	/* Theme roles — dark, plum ground. All derived from the palette.
-	   See knowledge/design/tokens.md. */
-	--bg: var(--color-plum);
-	--bg-elevated: color-mix(in srgb, var(--color-plum) 88%, var(--color-lilac));
-	--text: var(--color-lilac);
-	--muted: color-mix(in srgb, var(--color-lilac) 75%, var(--color-plum));
-	--accent: var(--color-peach);
-	--accent-hover: var(--color-sand);
-	--accent-deep: color-mix(in srgb, var(--color-terracotta) 50%, var(--color-peach));
-	--border: color-mix(in srgb, var(--color-gold) 35%, transparent);
-	--border-soft: color-mix(in srgb, var(--color-lilac) 22%, transparent);
-	--focus: var(--color-gold);
-	--success: var(--color-sage);
-	--error: color-mix(in srgb, var(--color-terracotta) 35%, var(--color-peach));
+	/* Theme mix percentages — unitless numbers, consumed below as
+	   `calc(<name> * 1%)`. Each one is a % input on the /theme page. */
+	--card-mix: 12;
+	--muted-mix: 25;
+	--glow-alpha: 9;
+	--btn-secondary-alpha: 10;
+	--badge-tint: 25;
+	--link-hover-mix: 25;
+	--btn-primary-hover-mix: 20;
+	--btn-secondary-hover-mix: 25;
+	--btn-danger-hover-mix: 20;
+	--menu-hover-mix: 12;
+
+	/* Derived theme colors — pure color-mix over the base controls above.
+	   The /theme page never sets these directly; they follow the base
+	   values, which is what keeps the preview and the live site identical. */
+	--bg-card: color-mix(
+		in srgb,
+		var(--bg) calc(100% - var(--card-mix) * 1%),
+		var(--text) calc(var(--card-mix) * 1%)
+	);
+	--text-muted: color-mix(
+		in srgb,
+		var(--text) calc(100% - var(--muted-mix) * 1%),
+		var(--bg) calc(var(--muted-mix) * 1%)
+	);
+	--link-hover: color-mix(
+		in srgb,
+		var(--link) calc(100% - var(--link-hover-mix) * 1%),
+		var(--link-hover-mix-with) calc(var(--link-hover-mix) * 1%)
+	);
+	--btn-primary-bg-hover: color-mix(
+		in srgb,
+		var(--btn-primary-bg) calc(100% - var(--btn-primary-hover-mix) * 1%),
+		var(--btn-primary-hover-mix-with) calc(var(--btn-primary-hover-mix) * 1%)
+	);
+	--btn-secondary-bg: color-mix(
+		in srgb,
+		var(--btn-secondary-fill) calc(var(--btn-secondary-alpha) * 1%),
+		transparent
+	);
+	--btn-secondary-bg-hover: color-mix(
+		in srgb,
+		var(--btn-secondary-fill) calc(100% - var(--btn-secondary-hover-mix) * 1%),
+		var(--btn-secondary-hover-mix-with) calc(var(--btn-secondary-hover-mix) * 1%)
+	);
+	--btn-danger-bg-hover: color-mix(
+		in srgb,
+		var(--btn-danger-hover-mix-with) calc(var(--btn-danger-hover-mix) * 1%),
+		transparent
+	);
+	--menu-hover-bg: color-mix(
+		in srgb,
+		var(--menu-hover-mix-with) calc(var(--menu-hover-mix) * 1%),
+		transparent
+	);
+	--badge-approved-bg: color-mix(
+		in srgb,
+		var(--success) calc(var(--badge-tint) * 1%),
+		transparent
+	);
+	--badge-rejected-bg: color-mix(
+		in srgb,
+		var(--error) calc(var(--badge-tint) * 1%),
+		transparent
+	);
+	--badge-pending-bg: color-mix(
+		in srgb,
+		var(--badge-pending-fill) calc(var(--badge-tint) * 1%),
+		transparent
+	);
+	--glow-color: color-mix(
+		in srgb,
+		var(--glow) calc(var(--glow-alpha) * 1%),
+		transparent
+	);
 }
 
 * {
@@ -61,18 +138,14 @@ body {
 	font-size: 17px;
 	line-height: 1.5;
 	color: var(--text);
-	background: radial-gradient(
-		1300px 500px at 50% -150px,
-		color-mix(in srgb, var(--color-gold) 9%, transparent),
-		transparent 60%
-	),
+	background: radial-gradient(1300px 500px at 50% -150px, var(--glow-color), transparent 60%),
 		var(--bg);
 	min-height: 100vh;
 }
 
 ::selection {
-	background: var(--color-gold);
-	color: var(--color-plum);
+	background: var(--selection-bg);
+	color: var(--selection-text);
 }
 
 /* Molle's only style is italic — font-style must be set or the browser
@@ -83,11 +156,11 @@ body {
 }
 
 a:not(.btn) {
-	color: var(--accent);
+	color: var(--link);
 }
 
 a:not(.btn):hover {
-	color: var(--accent-hover);
+	color: var(--link-hover);
 }
 
 /* ---- layout ---- */
@@ -114,10 +187,6 @@ a:not(.btn):hover {
 	color: var(--text);
 }
 
-.brand .dot {
-	color: var(--color-gold);
-}
-
 .site-nav {
 	display: flex;
 	align-items: baseline;
@@ -131,12 +200,12 @@ a:not(.btn):hover {
 }
 
 .site-nav a:hover {
-	color: var(--accent);
+	color: var(--link);
 }
 
 .who {
 	font-style: italic;
-	color: var(--muted);
+	color: var(--text-muted);
 }
 
 /* Header account menu (icon button + dropdown). */
@@ -152,19 +221,19 @@ a:not(.btn):hover {
 	justify-content: center;
 	padding: 0.3rem 0.45rem;
 	background: transparent;
-	border: 1px solid var(--border-soft);
+	border: 0;
 	border-radius: 8px;
 	color: var(--text);
 	cursor: pointer;
 }
 
 .menu-btn:hover {
-	color: var(--accent);
-	border-color: var(--border);
+	color: var(--link);
+	background: var(--menu-hover-bg);
 }
 
 .menu-btn:focus-visible {
-	outline: 2px solid var(--focus);
+	outline: 2px solid var(--link);
 	outline-offset: 1px;
 }
 
@@ -174,8 +243,7 @@ a:not(.btn):hover {
 	right: 0;
 	min-width: 9.5rem;
 	padding: 0.3rem;
-	background: var(--bg-elevated);
-	border: 1px solid var(--border);
+	background: var(--bg-card);
 	border-radius: 10px;
 	box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
 	z-index: 10;
@@ -202,20 +270,19 @@ a:not(.btn):hover {
 }
 
 .menu-item:hover {
-	background: color-mix(in srgb, var(--color-gold) 12%, transparent);
-	color: var(--accent);
+	background: var(--menu-hover-bg);
+	color: var(--link);
 }
 
 .menu-item:focus-visible {
-	outline: 2px solid var(--focus);
+	outline: 2px solid var(--link);
 	outline-offset: -2px;
 }
 
 /* ---- shared bits ---- */
 
 .card {
-	background: var(--bg-elevated);
-	border: 1px solid var(--border);
+	background: var(--bg-card);
 	border-radius: 12px;
 	padding: 1.5rem 1.75rem;
 	margin: 1.5rem auto;
@@ -229,7 +296,7 @@ a:not(.btn):hover {
 }
 
 .card .sub {
-	color: var(--muted);
+	color: var(--text-muted);
 	font-size: 0.95rem;
 }
 
@@ -245,11 +312,15 @@ a:not(.btn):hover {
 	margin-top: 1rem;
 }
 
+/* Buttons: primary (filled), secondary (subtle tinted fill), danger
+   (error text only). No borders; hover colors are the derived --*-hover
+   tokens. */
+
 .btn {
 	display: inline-block;
-	background: var(--color-peach);
-	color: var(--color-plum);
-	border: 1px solid var(--accent-deep);
+	background: var(--btn-primary-bg);
+	color: var(--btn-primary-text);
+	border: 0;
 	border-radius: 999px;
 	padding: 0.55rem 1.4rem;
 	font-family: inherit;
@@ -259,7 +330,7 @@ a:not(.btn):hover {
 }
 
 .btn:hover {
-	background: var(--color-sand);
+	background: var(--btn-primary-bg-hover);
 }
 
 .btn:disabled {
@@ -272,31 +343,29 @@ a:not(.btn):hover {
 	font-size: 0.9rem;
 }
 
-.btn.ghost {
-	background: transparent;
+.btn.secondary {
+	background: var(--btn-secondary-bg);
 	color: var(--text);
-	border-color: var(--border-soft);
 }
 
-.btn.ghost:hover {
-	background: color-mix(in srgb, var(--color-gold) 12%, transparent);
+.btn.secondary:hover {
+	background: var(--btn-secondary-bg-hover);
 }
 
 .btn.danger {
 	background: transparent;
 	color: var(--error);
-	border-color: color-mix(in srgb, var(--color-terracotta) 45%, transparent);
 }
 
 .btn.danger:hover {
-	background: color-mix(in srgb, var(--color-terracotta) 16%, transparent);
+	background: var(--btn-danger-bg-hover);
 }
 
 .field {
 	display: block;
 	margin-top: 1rem;
 	font-size: 0.95rem;
-	color: var(--muted);
+	color: var(--text-muted);
 }
 
 .field input {
@@ -308,13 +377,13 @@ a:not(.btn):hover {
 	font-size: 1rem;
 	color: var(--text);
 	background: var(--bg);
-	border: 1px solid color-mix(in srgb, var(--color-slate) 50%, transparent);
+	border: 1px solid var(--input-border);
 	border-radius: 8px;
 }
 
 .field input:focus {
-	outline: 2px solid var(--focus);
-	border-color: var(--accent);
+	outline: 2px solid var(--link);
+	border-color: var(--link);
 }
 
 .msg {
@@ -338,18 +407,18 @@ a:not(.btn):hover {
 }
 
 .badge.pending {
-	background: color-mix(in srgb, var(--color-slate) 30%, transparent);
-	color: var(--color-sand);
+	background: var(--badge-pending-bg);
+	color: var(--badge-pending-text);
 }
 
 .badge.approved {
-	background: color-mix(in srgb, var(--color-sage) 25%, transparent);
-	color: var(--color-sage);
+	background: var(--badge-approved-bg);
+	color: var(--success);
 }
 
 .badge.rejected {
-	background: color-mix(in srgb, var(--color-terracotta) 25%, transparent);
-	color: var(--color-sand);
+	background: var(--badge-rejected-bg);
+	color: var(--error);
 }
 
 /* ---- gallery ---- */
@@ -367,10 +436,10 @@ a:not(.btn):hover {
 
 .gallery-grid figure {
 	margin: 0;
-	background: var(--bg-elevated);
-	border: 1px solid var(--border);
+	background: var(--bg-card);
 	border-radius: 10px;
 	overflow: hidden;
+	box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
 }
 
 .gallery-grid a {
@@ -392,17 +461,17 @@ a:not(.btn):hover {
 	display: block;
 	background: repeating-linear-gradient(
 		45deg,
-		color-mix(in srgb, var(--color-gold) 6%, transparent),
-		color-mix(in srgb, var(--color-gold) 6%, transparent) 10px,
-		color-mix(in srgb, var(--color-gold) 14%, transparent) 10px,
-		color-mix(in srgb, var(--color-gold) 14%, transparent) 20px
+		color-mix(in srgb, var(--glow) 6%, transparent),
+		color-mix(in srgb, var(--glow) 6%, transparent) 10px,
+		color-mix(in srgb, var(--glow) 14%, transparent) 10px,
+		color-mix(in srgb, var(--glow) 14%, transparent) 20px
 	);
 }
 
 .gallery-grid figcaption {
 	padding: 0.5rem 0.7rem;
 	font-size: 0.85rem;
-	color: var(--muted);
+	color: var(--text-muted);
 }
 
 .gallery-grid figcaption .uploader {
@@ -422,13 +491,13 @@ a:not(.btn):hover {
 .table th {
 	text-align: left;
 	font-weight: 400;
-	color: var(--muted);
-	border-bottom: 1px solid var(--border-soft);
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--table-border);
 	padding: 0.4rem 0.6rem;
 }
 
 .table td {
-	border-bottom: 1px solid color-mix(in srgb, var(--color-lilac) 12%, transparent);
+	border-bottom: 1px solid var(--table-border);
 	padding: 0.4rem 0.6rem;
 	vertical-align: middle;
 }
