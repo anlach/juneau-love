@@ -1,17 +1,18 @@
 ---
 type: api-endpoint
 title: Update own display name
-description: The self-PATCH a signed-in user makes to their own users row to change their display name — the only column the guard trigger lets an authenticated user write; on success the client re-reads its own state so the header name follows.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-24T16:41:54Z }
+description: The self-PATCH a signed-in user makes to their own users row to change their display name — a self-writable column alongside party_size (the guard trigger's writer-class rules); on success the client re-reads its own state so the header name follows.
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-01T16:33:44Z }
 ---
 
 # Update own display name
 
 A signed-in user changes the name the site shows for them by patching their
 own `users` row directly — no edge function in the loop. The write is
-deliberately thin: `display_name` is the only column the [guard
-trigger](../db/users.md) lets `authenticated` write, so the request shape
-and the guard agree by construction. There is no server-side validation to
+deliberately thin: `display_name` is one of the two columns the [guard
+trigger](../db/users.md) lets `authenticated` write (the other is
+`party_size`, the [RSVP](/rsvp-party-size.md)), so the request shape and
+the guard agree by construction. There is no server-side validation to
 replicate on the client beyond "non-empty" (the column is NOT NULL).
 
 ## The request
@@ -44,7 +45,8 @@ simply matches no row.)
 - **Error expectations:** a hand-crafted self-update of any other column
   (`status`, `email`, `email_confirmed_at`, `last_login_link_sent_at`,
   `admin_notified_at`) raises `users: you may only change your own
-  display_name` from the guard even though RLS allows the row.
+  display_name or party_size` from the guard even though RLS allows the
+  row.
 
 ## Depends on
 

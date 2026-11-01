@@ -135,6 +135,8 @@ export interface UserRow {
 	email_confirmed_at: string | null;
 	/** Set by notify-registration when the admins were alerted (null until then). */
 	admin_notified_at: string | null;
+	/** Party size from the guest's RSVP (null until they've rsvp'd). */
+	party_size: number | null;
 }
 
 function restHeaders() {
@@ -184,6 +186,17 @@ export async function setUserStatus(email: string, status: 'approved' | 'rejecte
 		{ method: 'PATCH', headers: restHeaders(), body: JSON.stringify({ status }) });
 	if (!res.ok && res.status !== 204)
 		throw new Error(`status update failed: ${res.status} ${await res.text()}`);
+}
+
+/** Sum of party_size over approved users (service role) — the headcount the
+ * registrations page totals. */
+export async function getApprovedPartyTotal(): Promise<number> {
+	const res = await fetch(`${REST_URL}/users?status=eq.approved&select=party_size`, {
+		headers: restHeaders()
+	});
+	if (!res.ok) throw new Error(`users read failed: ${res.status} ${await res.text()}`);
+	const rows = (await res.json()) as Array<{ party_size: number | null }>;
+	return rows.reduce((sum, r) => sum + (r.party_size ?? 0), 0);
 }
 
 /** Read a user's asset rows (service role, bypasses RLS). */

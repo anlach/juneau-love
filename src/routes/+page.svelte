@@ -18,7 +18,7 @@
 		<h2 class="display" style="font-size: 2.2rem">Welcome, {name}</h2>
 		<p>You’re all set — your invitation is inside.</p>
 		<div class="spread">
-			<a class="btn" href="/gallery">See the photos</a>
+			<a class="btn" href="/rsvp">RSVP</a>
 			{#if hasPermission('registrations:read')}
 				<a class="btn ghost" href="/registrations">Review registrations</a>
 			{/if}
