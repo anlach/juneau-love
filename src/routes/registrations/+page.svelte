@@ -10,6 +10,8 @@
 		display_name: string;
 		email_confirmed_at: string | null;
 		status: 'pending' | 'approved' | 'rejected';
+		/** Party size from the guest's RSVP (null until they've rsvp'd). */
+		party_size: number | null;
 		created_at: string;
 	}
 
@@ -66,11 +68,18 @@
 		}
 	});
 
+	// Headcount for the hosts: the sum of party_size over APPROVED rows,
+	// where an unset (null) party size counts for zero (knowledge/stories/
+	// review-registrations.md).
+	const headcount = $derived(
+		rows.filter((r) => r.status === 'approved').reduce((sum, r) => sum + (r.party_size ?? 0), 0)
+	);
+
 	async function load() {
 		loading = true;
 		const { data, error } = await supabase
 			.from('users')
-			.select('id, email, display_name, email_confirmed_at, status, created_at')
+			.select('id, email, display_name, email_confirmed_at, status, party_size, created_at')
 			.order('created_at', { ascending: false });
 		rows = (error || !data ? [] : (data as Registration[]));
 		loading = false;
@@ -140,6 +149,9 @@
 {:else if isReadAdmin}
 	<h1 class="display" style="font-size: 2.6rem">Registrations</h1>
 	<p class="sub">Newest first. A guest can only be approved once their email is confirmed.</p>
+	{#if !loading}
+		<p class="headcount">Expected headcount: {headcount}</p>
+	{/if}
 
 	{#if requested}
 		{#if loading}
@@ -196,6 +208,7 @@
 					<th>Email</th>
 					<th>Registered</th>
 					<th>Email</th>
+					<th class="party">Party</th>
 					<th>Status</th>
 					<th></th>
 				</tr>
@@ -207,6 +220,7 @@
 						<td>{row.email}</td>
 						<td>{fmtDate(row.created_at)}</td>
 						<td>{row.email_confirmed_at ? '✓ verified' : 'not yet'}</td>
+						<td class="party">{row.party_size === null ? '—' : row.party_size}</td>
 						<td><span class="badge {row.status}">{row.status}</span></td>
 						<td class="actions">
 							{#if row.status === 'pending'}
@@ -255,3 +269,14 @@
 		<div class="spread"><a class="btn ghost" href="/">Back home</a></div>
 	</div>
 {/if}
+
+<style>
+	.headcount {
+		font-size: 1.05rem;
+		margin: 0.8rem 0 1.2rem;
+	}
+	.table .party,
+	.table th.party {
+		text-align: center;
+	}
+</style>

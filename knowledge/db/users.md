@@ -2,7 +2,7 @@
 type: db-table
 title: users
 description: One row per registered site user — the registration record with approval status. Users have no password and log in via short-lived GoTrue magiclinks (no credential lives in this table); email-verification state is mirrored from auth.users.
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-27T14:23:31Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-01T16:33:44Z }
 ---
 
 # users
@@ -33,6 +33,7 @@ verification state is mirrored here as `email_confirmed_at`; approval is
 | `email_confirmed_at` | `timestamptz` | Mirrored from `auth.users.email_confirmed_at` by a trigger when the guest clicks the confirmation link. NULL = not verified yet. Drives the "verified" indicator on the registrations page; `registration-decision` refuses to approve while NULL. |
 | `last_login_link_sent_at` | `timestamptz` | When [send-login-link](../api/send-login-link.md) last emailed a login link; drives the 10-minute resend cooldown. Written only by the edge function (service role). |
 | `admin_notified_at` | `timestamptz` | When [notify-registration](../api/notify-registration.md) last alerted the admins about this pending registration; the idempotency stamp that makes each registration notify at most once. Written only by that function (service role). |
+| `party_size` | `int` | How many people in the guest's party will attend, from the guest's [RSVP](../stories/rsvp-party-size.md). **NULL = hasn't rsvp'd yet** (no column default); `0` is a real value ("not coming"). CHECK `party_size is null or party_size between 0 and 8`. Written by the guest themselves (self-PATCH) or the owner console. |
 | `status` | `text` NOT NULL DEFAULT `'pending'` | CHECK `in ('pending','approved','rejected')`. The approval state; the only column ever changed by an admin, and only through the `registration-decision` edge function (never by a client). |
 | `created_at` | `timestamptz` NOT NULL DEFAULT `now()` | Registration time. |
 | `updated_at` | `timestamptz` NOT NULL DEFAULT `now()` | Set to `now()` by the guard trigger on every allowed update. |
@@ -50,7 +51,8 @@ create table public.users (
   last_login_link_sent_at timestamptz,
   admin_notified_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  party_size int check (party_size is null or party_size between 0 and 8)
 );
 ```
 
@@ -130,8 +132,14 @@ $$;
   approval state ([Current user state](../api/current-user-state.md)).
 - **Self display-name update:** a signed-in user changes their own
   `display_name` from the change-name page — a [self-PATCH](../api/change-display-name.md)
-  of that one column (the guard's only self-writable column; not gated on
+  of that one column (a self-writable column alongside `party_size`; not gated on
   `status`; see [Change display name](../stories/change-display-name.md)).
+- **Self RSVP update:** a signed-in guest saves their party size from the
+  RSVP page — a [self-PATCH](../api/rsvp-party-size.md) of `party_size`, the
+  guard's second self-writable column (not gated on `status`; the number only
+  counts toward the admin's headcount while the row is approved). The 0–8
+  range is enforced by the CHECK constraint, not the guard; NULL until the
+  first save (hasn't rsvp'd — distinct from 0, "not coming").
 - **Guest name join:** the self-read policy is what blocks guests from
   reading other users' rows; the `guest_names` view (documented with
   [assets](/assets.md)) is the only sanctioned way an approved guest sees
@@ -200,21 +208,24 @@ functions, `postgres` for the owner console — and `auth.uid()`):
 - **`service_role` DB role** (edge functions): may change `status` only
   (transition must be allowed, table above) plus the two notification
   timestamps, `last_login_link_sent_at` and `admin_notified_at`. Nothing
-  else.
+  else — `party_size` belongs to the guest themselves.
 - **`postgres` role** (our own `SECURITY DEFINER` triggers, plus the
   owner console / migrations / bootstrap): unrestricted — the accepted
   owner bypass; the sync triggers only ever touch their own column.
 - **Self** (`authenticated`, `auth.uid() = user_id`): may change
-  `display_name` only. A hand-crafted self-update of `status`,
-  `email_confirmed_at`, `last_login_link_sent_at`, or `admin_notified_at`
-  is rejected here even though RLS allows the row — this is what stops a
-  user from claiming their own verification, gaming the link cooldown, or
-  suppressing their own admin notification.
+  `display_name` and `party_size` (the RSVP) only. A hand-crafted
+  self-update of `status`, `email_confirmed_at`, `last_login_link_sent_at`,
+  or `admin_notified_at` is rejected here even though RLS allows the row —
+  this is what stops a user from claiming their own verification, gaming
+  the link cooldown, or suppressing their own admin notification.
+  Out-of-range `party_size` values pass the guard and trip the CHECK
+  constraint (HTTP 400).
 - Anything else → raise.
 - Always: `updated_at` forced to `now()`.
-- On INSERT → `status` forced to `'pending'` and `email_confirmed_at`
-  forced to `null`, so a hand-crafted self-insert can never skip review
-  or claim verification.
+- On INSERT → `status` forced to `'pending'`, `email_confirmed_at` forced
+  to `null`, and `party_size` forced to `null`, so a hand-crafted
+  self-insert can never skip review, claim verification, or claim a party
+  size.
 
 **Deletes — server-side roles only.** There is no DELETE policy, no
 `delete` grant for `authenticated`, and a `BEFORE DELETE` guard
