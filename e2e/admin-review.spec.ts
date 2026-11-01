@@ -153,9 +153,11 @@ test.describe('admin registration review', () => {
 	});
 
 	/**
-	 * Headcount: the table shows each guest's party size (the RSVP number),
-	 * and a total that counts only APPROVED rsvps — rejecting a guest keeps
-	 * their number in the row but drops it from the total.
+	 * Headcount: the table shows each guest's party size (the RSVP number;
+	 * the column's null default renders as an em dash until they've
+	 * rsvp'd), and a total over APPROVED rows in which an unset (null)
+	 * party size counts for zero — rejecting a guest keeps their number in
+	 * the row but drops it from the total.
 	 */
 	test('the table shows party sizes and a headcount total of approved rsvps', async ({
 		page
@@ -169,6 +171,14 @@ test.describe('admin registration review', () => {
 		await row.getByRole('button', { name: 'Approve' }).click();
 		await expect(page.getByRole('status')).toContainText(/approved/i);
 		await expect(row.locator('.badge')).toHaveText('approved');
+
+		// She hasn't rsvp'd yet: her party cell is null (the column default)
+		// and the total counts her for zero — the baseline.
+		const baseline = await getApprovedPartyTotal();
+		await expect(row.getByRole('cell', { name: '—' })).toBeVisible();
+		await expect(
+			page.getByText(new RegExp(`expected headcount: ${baseline}`, 'i'))
+		).toBeVisible();
 
 		// She RSVPs for four through the guest page (the landing card link).
 		await openAuthLink(page, email, 'magiclink');
@@ -189,20 +199,20 @@ test.describe('admin registration review', () => {
 		await expect(partyCell).toBeVisible();
 
 		const total = await getApprovedPartyTotal();
-		expect(total).toBeGreaterThanOrEqual(4);
+		expect(total).toBe(baseline + 4);
 		await expect(
 			page.getByText(new RegExp(`expected headcount: ${total}`, 'i'))
 		).toBeVisible();
 
 		// Rejecting her keeps her number in the table but drops it from the
-		// total (only approved rsvps count).
+		// total (only approved rows count) — back to the baseline.
 		await row.getByRole('button', { name: 'Reject' }).click();
 		await expect(page.getByRole('status')).toContainText(/rejected/i);
 		await expect(row.locator('.badge')).toHaveText('rejected');
 		await expect(partyCell).toBeVisible();
 
 		const totalAfter = await getApprovedPartyTotal();
-		expect(totalAfter).toBe(total - 4);
+		expect(totalAfter).toBe(baseline);
 		await expect(
 			page.getByText(new RegExp(`expected headcount: ${totalAfter}`, 'i'))
 		).toBeVisible();
