@@ -4,6 +4,7 @@ import {
 	confirmEmail,
 	createUnconfirmedUser,
 	deleteAuthUser,
+	getApprovedPartyTotal,
 	getRoleNames,
 	getUserRow,
 	openAuthLink,
@@ -149,5 +150,61 @@ test.describe('admin registration review', () => {
 		await expect(banner).toContainText(/couldn.t find that registration/i);
 		await banner.getByRole('button', { name: 'Got it' }).click();
 		await expect(banner).toHaveCount(0);
+	});
+
+	/**
+	 * Headcount: the table shows each guest's party size (the RSVP number),
+	 * and a total that counts only APPROVED rsvps — rejecting a guest keeps
+	 * their number in the row but drops it from the total.
+	 */
+	test('the table shows party sizes and a headcount total of approved rsvps', async ({
+		page
+	}) => {
+		const email = await makeConfirmedPendingUser('Headcount Hattie');
+		await signInAsAdmin(page);
+
+		// Approve Hattie so she can rsvp.
+		let row = page.locator('tr', { hasText: email });
+		await expect(row).toBeVisible();
+		await row.getByRole('button', { name: 'Approve' }).click();
+		await expect(page.getByRole('status')).toContainText(/approved/i);
+		await expect(row.locator('.badge')).toHaveText('approved');
+
+		// She RSVPs for four through the guest page (the landing card link).
+		await openAuthLink(page, email, 'magiclink');
+		await expect(page).toHaveURL('/');
+		await page.getByRole('link', { name: /rsvp/i }).click();
+		await expect(page).toHaveURL('/rsvp');
+		await page.getByLabel(/how many/i).fill('4');
+		await page.getByRole('button', { name: /save rsvp/i }).click();
+		await expect(page.getByText(/thank you/i)).toBeVisible();
+		await expect.poll(async () => (await getUserRow(email))?.party_size).toBe(4);
+
+		// …and the admin's table shows her number with a matching total.
+		await signInAsAdmin(page);
+		await expect(page.getByRole('columnheader', { name: 'Party' })).toBeVisible();
+		row = page.locator('tr', { hasText: email });
+		await expect(row).toBeVisible();
+		const partyCell = row.getByRole('cell').filter({ hasText: /^4$/ });
+		await expect(partyCell).toBeVisible();
+
+		const total = await getApprovedPartyTotal();
+		expect(total).toBeGreaterThanOrEqual(4);
+		await expect(
+			page.getByText(new RegExp(`expected headcount: ${total}`, 'i'))
+		).toBeVisible();
+
+		// Rejecting her keeps her number in the table but drops it from the
+		// total (only approved rsvps count).
+		await row.getByRole('button', { name: 'Reject' }).click();
+		await expect(page.getByRole('status')).toContainText(/rejected/i);
+		await expect(row.locator('.badge')).toHaveText('rejected');
+		await expect(partyCell).toBeVisible();
+
+		const totalAfter = await getApprovedPartyTotal();
+		expect(totalAfter).toBe(total - 4);
+		await expect(
+			page.getByText(new RegExp(`expected headcount: ${totalAfter}`, 'i'))
+		).toBeVisible();
 	});
 });
