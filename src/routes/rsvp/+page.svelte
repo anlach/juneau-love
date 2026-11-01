@@ -7,7 +7,7 @@
 	// hand-crafted writes (knowledge/db/users.md).
 	const PARTY_MAX = 8;
 
-	let count = $state('');
+	let count = $state<number | ''>('');
 	let seeded = $state(false);
 	let busy = $state(false);
 	let formError = $state<string | null>(null);
@@ -23,11 +23,12 @@
 	// seed on the first settle. null (no RSVP yet, the column's default)
 	// stays an empty field, and clearing the field is not a way to
 	// un-RSVP: saving empty is refused and the saved number stands.
+	// (A number input binds a number — or '' while empty — in Svelte 5.)
 	$effect(() => {
 		if (seeded) return;
 		const ps = profile?.party_size;
 		if (ps === null || typeof ps === 'number') {
-			count = ps === null ? '' : String(ps);
+			count = ps ?? '';
 			seeded = true;
 		}
 	});
@@ -35,9 +36,9 @@
 	async function save() {
 		if (busy || !profile) return;
 		// An RSVP is a whole number of people, 0 to PARTY_MAX. Empty input
-		// is refused for the same message as out-of-range.
-		const n = Number(count);
-		if (count.trim() === '' || !Number.isInteger(n) || n < 0 || n > PARTY_MAX) {
+		// (count === '') is refused for the same message as out-of-range.
+		const n = count === '' ? NaN : Number(count);
+		if (!Number.isInteger(n) || n < 0 || n > PARTY_MAX) {
 			formError = `Tell us how many of you are coming — 0 to ${PARTY_MAX}.`;
 			saved = false;
 			return;
