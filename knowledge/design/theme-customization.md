@@ -25,8 +25,12 @@ consume — and a preview pane shows the effect immediately.
 
 ## Page layout
 
-Two columns inside the usual `.frame`, **each with its own scrollbar**
-(`max-height` + `overflow-y: auto`):
+Two columns inside the usual `.frame`, **evenly split 50/50** (`1fr 1fr`),
+**each with its own scrollbar** (`max-height` + `overflow-y: auto`).
+Under 720px the panes **stack** (one per half of the viewport,
+each `max-height: calc(50vh - 1rem)` and scrolling inside its half) so the
+preview stays visible while editing. A wider two-column split at phone
+widths would squash the preview into an unusable sliver.
 
 - **Left — controls.** Grouped sections (Page, Text, Surfaces, Links &
   focus, Primary button, Secondary button, Danger button, Inputs & table,

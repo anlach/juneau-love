@@ -361,19 +361,34 @@
 <style>
 	.theme-page {
 		display: grid;
-		grid-template-columns: minmax(280px, 340px) 1fr;
+		grid-template-columns: 1fr 1fr;
 		gap: 1.25rem;
 		align-items: start;
 		margin-top: 1.5rem;
 	}
 
-	/* Two independently scrolling panes. */
+	/* Two independently scrolling panes, evenly split. */
 	.controls,
 	.preview {
 		max-height: calc(100vh - 10rem);
 		overflow-y: auto;
 		padding: 1rem 1.25rem 1.5rem;
 		border-radius: 12px;
+	}
+
+	/* Mobile: stack the panes, one per half of the screen, so the preview
+	   stays visible while editing — each pane scrolls inside its half.
+	   (The 1rem is half the gap, so the two halves fit the viewport.)
+	 */
+	@media (max-width: 720px) {
+		.theme-page {
+			grid-template-columns: 1fr;
+		}
+		.controls,
+		.preview {
+			max-height: calc(50vh - 1rem);
+			overflow-y: auto;
+		}
 	}
 	.controls {
 		background: var(--bg-card);
