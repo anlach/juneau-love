@@ -23,13 +23,15 @@
 			{/if}
 		</div>
 	</div>
-	<img
-		class="collage"
-		src="/images/collage.webp"
-		alt="Morgan and Andrew in a collage of their photoshoot"
-		width="810"
-		height="770"
-	/>
+	<div class="collage-row">
+		<img
+			class="collage"
+			src="/images/collage.webp"
+			alt="Morgan and Andrew in a collage of their photoshoot"
+			width="810"
+			height="770"
+		/>
+	</div>
 {:else if status === 'pending'}
 	<StateScreen status="pending" name={name} />
 {:else if status === 'rejected'}
@@ -53,9 +55,11 @@
 {/if}
 
 <style>
+	.collage-row {
+		display: flex;
+		justify-content: center;
+	}
 	.collage {
-		display: block;
-		margin: 0 auto;
 		border-radius: 12px;
 	}
 	.hero {
