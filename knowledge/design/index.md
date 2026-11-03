@@ -6,6 +6,7 @@
 # design-decision
 
 * [Gallery thumbnail rendering](gallery-thumbnails.md) - The gallery grid shows the client-generated WebP thumbnail at its natural aspect ratio — width-constrained, never cropped or stretched — in a box that hugs the thumbnail and centers vertically in its row; 'opening an image' is a plain link that opens the full-size original in a new tab. Rows without a thumbnail fall back to the full-size URL.
+* [Landing page (variants and photoshoot collage)](landing.md) - The / page renders one of four variants by session state — public invitation hero (the prerendered one), the approved welcome/RSVP card with the photoshoot collage underneath, and the shared StateScreen screens. The collage is a committed static WebP shown at its natural size (overflow accepted on narrow screens).
 * [Theme customization (admin theme page)](theme-customization.md) - The /theme page: every base color and mix percentage in [Design tokens](/tokens.md) is a control (color pickers + % inputs) with a live preview pane of the real components, static hover twins, and a WCAG contrast check. FE-only for now — the theme saves to localStorage and is per-browser; the page is intentionally ungated for the time being.
 * [What renders where (prerendered vs client-rendered)](prerender.md) - Only the public landing / is prerendered; every session- or status-dependent route is client-rendered behind the adapter-static SPA fallback (404.html), so no user-specific data ever reaches prerendered HTML.
 
