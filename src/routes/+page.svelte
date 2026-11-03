@@ -16,7 +16,6 @@
 {#if status === 'approved'}
 	<div class="card center">
 		<h2 class="display" style="font-size: 2.2rem">Welcome, {name}</h2>
-		<p>You’re all set — your invitation is inside.</p>
 		<div class="spread">
 			<a class="btn" href="/rsvp">RSVP</a>
 			{#if hasPermission('registrations:read')}
@@ -24,6 +23,13 @@
 			{/if}
 		</div>
 	</div>
+	<img
+		class="collage"
+		src="/images/collage.webp"
+		alt="Morgan and Andrew in a collage of their photoshoot"
+		width="810"
+		height="770"
+	/>
 {:else if status === 'pending'}
 	<StateScreen status="pending" name={name} />
 {:else if status === 'rejected'}
@@ -47,6 +53,13 @@
 {/if}
 
 <style>
+	.collage {
+		display: block;
+		margin: 0 auto;
+		max-width: 480px;
+		width: 100%;
+		border-radius: 12px;
+	}
 	.hero {
 		padding: 4rem 0 2rem;
 	}
