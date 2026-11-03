@@ -56,8 +56,6 @@
 	.collage {
 		display: block;
 		margin: 0 auto;
-		max-width: 480px;
-		width: 100%;
 		border-radius: 12px;
 	}
 	.hero {

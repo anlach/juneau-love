@@ -1,7 +1,7 @@
 ---
 type: design-decision
 title: Landing page (variants and photoshoot collage)
-description: "The / page renders one of four variants by session state — public invitation hero (the prerendered one), the approved welcome/RSVP card with the photoshoot collage underneath, and the shared StateScreen screens. The collage is a committed static WebP sized to match the card."
+description: "The / page renders one of four variants by session state — public invitation hero (the prerendered one), the approved welcome/RSVP card with the photoshoot collage underneath, and the shared StateScreen screens. The collage is a committed static WebP shown at its natural size (overflow accepted on narrow screens)."
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-03T04:11:46Z }
 ---
 
@@ -28,8 +28,10 @@ Underneath the welcome/RSVP card in the approved variant:
   page ([Shared components](/components.md#things-to-do-page--things-to-do)).
   Stored as WebP, the site's image format (1 MB PNG source → ~136 KB),
   consistent with [Gallery thumbnail rendering](/gallery-thumbnails.md).
-- Layout: centered, `max-width: 480px` to match `.card`, 12px radius to
-  match the card corners, `width: 100%` so it shrinks on narrow screens.
+- Layout: centered, shown at its **natural 810×770 size — no
+  `max-width`, no scaling** (the image is never resized); on viewports
+  narrower than that it simply overflows the `.frame` rather than
+  shrinking. 12px radius to match the card corners.
 - It is content, not decoration: alt text describes the couple
   ("Morgan and Andrew in a collage of their photoshoot"), and explicit
   `width`/`height` attributes keep the layout stable while it loads.
