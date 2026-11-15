@@ -4,7 +4,7 @@ import {
 	confirmEmail,
 	createUnconfirmedUser,
 	deleteAuthUser,
-	getApprovedPartyTotal,
+	getApprovedTotals,
 	getRoleNames,
 	getUserRow,
 	openAuthLink,
@@ -153,13 +153,13 @@ test.describe('admin registration review', () => {
 	});
 
 	/**
-	 * Headcount: the table shows each guest's party size (the RSVP number;
-	 * the column's null default renders as an em dash until they've
-	 * rsvp'd), and a total over APPROVED rows in which an unset (null)
-	 * party size counts for zero — rejecting a guest keeps their number in
-	 * the row but drops it from the total.
+	 * Headcount: the table shows each guest's RSVP counts (the Wedding and
+	 * Whale columns; each column's null default renders as an em dash
+	 * until they've rsvp'd), and a total per event over APPROVED rows in
+	 * which an unset (null) count counts for zero — rejecting a guest
+	 * keeps their numbers in the row but drops them from the totals.
 	 */
-	test('the table shows party sizes and a headcount total of approved rsvps', async ({
+	test('the table shows per-event counts and headcount totals of approved rsvps', async ({
 		page
 	}) => {
 		const email = await makeConfirmedPendingUser('Headcount Hattie');
@@ -172,49 +172,67 @@ test.describe('admin registration review', () => {
 		await expect(page.getByRole('status')).toContainText(/approved/i);
 		await expect(row.locator('.badge')).toHaveText('approved');
 
-		// She hasn't rsvp'd yet: her party cell is null (the column default)
-		// and the total counts her for zero — the baseline.
-		const baseline = await getApprovedPartyTotal();
-		await expect(row.getByRole('cell', { name: '—' })).toBeVisible();
+		// She hasn't rsvp'd yet: both count cells are null (the columns'
+		// defaults) and the totals count her for zero — the baseline.
+		const baseline = await getApprovedTotals();
+		await expect(row.getByRole('cell', { name: '—' })).toHaveCount(2);
 		await expect(
-			page.getByText(new RegExp(`expected headcount: ${baseline}`, 'i'))
+			page.getByText(
+				new RegExp(
+					`expected headcount: ${baseline.wedding} wedding · ${baseline.whale} whale`,
+					'i'
+				)
+			)
 		).toBeVisible();
 
-		// She RSVPs for four through the guest page (the landing card link).
+		// She RSVPs through the guest page (the landing card link): four to
+		// the wedding, two to the whale watch.
 		await openAuthLink(page, email, 'magiclink');
 		await expect(page).toHaveURL('/');
 		await page.getByRole('link', { name: /rsvp/i }).click();
 		await expect(page).toHaveURL('/rsvp');
-		await page.getByLabel(/how many/i).fill('4');
+		await page.getByLabel(/wedding/i).fill('4');
+		await page.getByLabel(/whale watch/i).fill('2');
 		await page.getByRole('button', { name: /save rsvp/i }).click();
 		await expect(page.getByText(/thank you/i)).toBeVisible();
 		await expect.poll(async () => (await getUserRow(email))?.party_size).toBe(4);
+		await expect.poll(async () => (await getUserRow(email))?.whale_watch_party_size).toBe(2);
 
-		// …and the admin's table shows her number with a matching total.
+		// …and the admin's table shows her numbers with matching totals.
 		await signInAsAdmin(page);
-		await expect(page.getByRole('columnheader', { name: 'Party' })).toBeVisible();
+		await expect(page.getByRole('columnheader', { name: 'Wedding' })).toBeVisible();
+		await expect(page.getByRole('columnheader', { name: 'Whale' })).toBeVisible();
 		row = page.locator('tr', { hasText: email });
 		await expect(row).toBeVisible();
-		const partyCell = row.getByRole('cell').filter({ hasText: /^4$/ });
-		await expect(partyCell).toBeVisible();
+		const cells = row.getByRole('cell').filter({ hasText: /^[0-9]+$/ });
+		await expect(cells).toHaveCount(2);
+		await expect(cells).toHaveText(['4', '2']);
 
-		const total = await getApprovedPartyTotal();
-		expect(total).toBe(baseline + 4);
+		const total = await getApprovedTotals();
+		expect(total.wedding).toBe(baseline.wedding + 4);
+		expect(total.whale).toBe(baseline.whale + 2);
 		await expect(
-			page.getByText(new RegExp(`expected headcount: ${total}`, 'i'))
+			page.getByText(
+				new RegExp(`expected headcount: ${total.wedding} wedding · ${total.whale} whale`, 'i')
+			)
 		).toBeVisible();
 
-		// Rejecting her keeps her number in the table but drops it from the
-		// total (only approved rows count) — back to the baseline.
+		// Rejecting her keeps her numbers in the table but drops them from
+		// the totals (only approved rows count) — back to the baseline.
 		await row.getByRole('button', { name: 'Reject' }).click();
 		await expect(page.getByRole('status')).toContainText(/rejected/i);
 		await expect(row.locator('.badge')).toHaveText('rejected');
-		await expect(partyCell).toBeVisible();
+		await expect(cells).toHaveText(['4', '2']);
 
-		const totalAfter = await getApprovedPartyTotal();
-		expect(totalAfter).toBe(baseline);
+		const totalAfter = await getApprovedTotals();
+		expect(totalAfter).toEqual(baseline);
 		await expect(
-			page.getByText(new RegExp(`expected headcount: ${totalAfter}`, 'i'))
+			page.getByText(
+				new RegExp(
+					`expected headcount: ${totalAfter.wedding} wedding · ${totalAfter.whale} whale`,
+					'i'
+				)
+			)
 		).toBeVisible();
 	});
 });

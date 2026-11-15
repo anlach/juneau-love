@@ -10,8 +10,10 @@
 		display_name: string;
 		email_confirmed_at: string | null;
 		status: 'pending' | 'approved' | 'rejected';
-		/** Party size from the guest's RSVP (null until they've rsvp'd). */
+		/** Wedding party size from the guest's RSVP (null until they've rsvp'd). */
 		party_size: number | null;
+		/** Whale-watch party size from the guest's RSVP (null until they've rsvp'd). */
+		whale_watch_party_size: number | null;
 		created_at: string;
 	}
 
@@ -68,18 +70,22 @@
 		}
 	});
 
-	// Headcount for the hosts: the sum of party_size over APPROVED rows,
-	// where an unset (null) party size counts for zero (knowledge/stories/
-	// review-registrations.md).
-	const headcount = $derived(
-		rows.filter((r) => r.status === 'approved').reduce((sum, r) => sum + (r.party_size ?? 0), 0)
+	// Headcount for the hosts, per event: the sum of each RSVP count over
+	// APPROVED rows, where an unset (null) count counts for zero
+	// (knowledge/stories/review-registrations.md).
+	const approvedRows = $derived(rows.filter((r) => r.status === 'approved'));
+	const weddingTotal = $derived(
+		approvedRows.reduce((sum, r) => sum + (r.party_size ?? 0), 0)
+	);
+	const whaleTotal = $derived(
+		approvedRows.reduce((sum, r) => sum + (r.whale_watch_party_size ?? 0), 0)
 	);
 
 	async function load() {
 		loading = true;
 		const { data, error } = await supabase
 			.from('users')
-			.select('id, email, display_name, email_confirmed_at, status, party_size, created_at')
+			.select('id, email, display_name, email_confirmed_at, status, party_size, whale_watch_party_size, created_at')
 			.order('created_at', { ascending: false });
 		rows = (error || !data ? [] : (data as Registration[]));
 		loading = false;
@@ -150,7 +156,9 @@
 	<h1 class="display" style="font-size: 2.6rem">Registrations</h1>
 	<p class="sub">Newest first. A guest can only be approved once their email is confirmed.</p>
 	{#if !loading}
-		<p class="headcount">Expected headcount: {headcount}</p>
+		<p class="headcount">
+			Expected headcount: {weddingTotal} wedding · {whaleTotal} whale
+		</p>
 	{/if}
 
 	{#if requested}
@@ -208,7 +216,8 @@
 					<th>Email</th>
 					<th>Registered</th>
 					<th>Email</th>
-					<th class="party">Party</th>
+					<th class="party">Wedding</th>
+					<th class="party">Whale</th>
 					<th>Status</th>
 					<th></th>
 				</tr>
@@ -221,6 +230,7 @@
 						<td>{fmtDate(row.created_at)}</td>
 						<td>{row.email_confirmed_at ? '✓ verified' : 'not yet'}</td>
 						<td class="party">{row.party_size === null ? '—' : row.party_size}</td>
+						<td class="party">{row.whale_watch_party_size === null ? '—' : row.whale_watch_party_size}</td>
 						<td><span class="badge {row.status}">{row.status}</span></td>
 						<td class="actions">
 							{#if row.status === 'pending'}

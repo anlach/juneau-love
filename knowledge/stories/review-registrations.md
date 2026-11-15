@@ -1,7 +1,7 @@
 ---
 type: user-story
 title: Review registrations (admin)
-description: The admin opens a registrations page listing every registration with its verification and approval state, and can approve (verified emails only) or reject each one; approving emails the guest their login link. The table also shows each guest's party size (the RSVP number) and an expected-headcount total over approved rows, where an unset party size counts for zero. Admins are alerted to each new registration by email with approve/reject deep links into this page.
+description: The admin opens a registrations page listing every registration with its verification and approval state, and can approve (verified emails only) or reject each one; approving emails the guest their login link. The table also shows each guest's wedding and whale-watch RSVP counts (em dash while unset) and an expected-headcount total per event over approved rows, where an unset count counts for zero. Admins are alerted to each new registration by email with approve/reject deep links into this page.
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-01T16:33:44Z }
 ---
 
@@ -25,11 +25,13 @@ approve or reject each one,
    (`?approve=<user_id>` / `?reject=<user_id>`).
 2. The page loads all registrations, newest first, each row showing
    display name, email, `created_at`, a **verified indicator**
-   (`email_confirmed_at` set or not), the guest's **party size**
-   (the [RSVP](/rsvp-party-size.md) number — an em dash while it is still
-   null), and current status (pending / approved / rejected). Above the
-   table it shows the **expected headcount**: the sum of party sizes over
-   *approved* rows, with an unset (null) party size counted as 0.
+   (`email_confirmed_at` set or not), the guest's **wedding count** and
+   **whale-watch count** (the two [RSVP](/rsvp-party-size.md) numbers — an
+   em dash in each column while still null), and current status
+   (pending / approved / rejected). Above the table it shows the
+   **expected headcount per event**: the sum of wedding counts and the sum
+   of whale-watch counts over *approved* rows, each with an unset (null)
+   count counted as 0.
 3. On a `pending` row the admin chooses **approve** (available only for
    verified emails — the function enforces the same rule) or **reject**
    (always available), each gated by `registrations:approve` /
@@ -52,11 +54,11 @@ approve or reject each one,
       their own row (RLS), and the nav entry is absent.
 - [ ] The table lists **all** registrations regardless of status, with
       the status and verified indicator clearly shown per row.
-- [ ] The table shows each guest's party size (em dash while null —
-      hasn't rsvp'd), and an expected-headcount total that sums party
-      sizes over **approved** rows only, counting an unset (null) party
-      size as 0: rejecting a guest keeps their number in the row but
-      drops it from the total.
+- [ ] The table shows each guest's wedding and whale-watch counts (em
+      dash in each column while null — hasn't rsvp'd), and expected
+      headcount totals per event that sum the counts over **approved**
+      rows only, counting an unset (null) count as 0: rejecting a guest
+      keeps their numbers in the row but drops them from both totals.
 - [ ] Approve on a verified pending registration sets it to `approved`,
       grants the guest role, **and emails the guest their login link** (a
       GoTrue magiclink).
