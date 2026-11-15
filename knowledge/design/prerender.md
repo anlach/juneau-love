@@ -19,6 +19,7 @@ the render mode of every route, and the decision rule is:
 | `/login`, `/register`, `/auth/confirm` | client (`ssr = false`) | Session-dependent (fragment session exchange, "already signed in" state) |
 | `/gallery` | client (`ssr = false`) | Gated on `status = 'approved'` |
 | `/things-to-do` | client (`ssr = false`) | Gated on `status = 'approved'` |
+| `/rsvp`, `/change-name`, `/whale-watching` | not prerendered (served through the SPA fallback) | Gated on `status = 'approved'`; no `prerender = true`, so the build emits no HTML for them and the fallback shell renders client-side |
 | `/registrations` | client (`ssr = false`) | Gated on `registrations:read` |
 
 ## Mechanics

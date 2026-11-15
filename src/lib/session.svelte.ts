@@ -27,6 +27,8 @@ export interface Profile {
 	admin_notified_at: string | null;
 	/** Party size from the guest's RSVP (null until they've rsvp'd). */
 	party_size: number | null;
+	/** Whale-watch party size from the guest's RSVP (null until they've rsvp'd). */
+	whale_watch_party_size: number | null;
 }
 
 export interface AuthSnapshot {
@@ -101,7 +103,7 @@ export async function refreshState(): Promise<void> {
 	const [profileRes, permsRes] = await Promise.all([
 		supabase
 			.from('users')
-			.select('id, email, display_name, status, email_confirmed_at, admin_notified_at, party_size')
+			.select('id, email, display_name, status, email_confirmed_at, admin_notified_at, party_size, whale_watch_party_size')
 			.eq('id', u.id)
 			.maybeSingle(),
 		supabase.from('user_permissions').select('permission').eq('user_id', u.id)
@@ -128,7 +130,8 @@ export async function refreshState(): Promise<void> {
 				status: p.status,
 				email_confirmed_at: p.email_confirmed_at,
 				admin_notified_at: p.admin_notified_at,
-				party_size: p.party_size
+				party_size: p.party_size,
+				whale_watch_party_size: p.whale_watch_party_size
 			}
 		: null;
 	auth.perms = (permsRes.data ?? []).map((r: { permission: string }) => r.permission);

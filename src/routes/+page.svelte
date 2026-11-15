@@ -19,6 +19,7 @@
 		<p>You’re all set — your invitation is inside.</p>
 		<div class="spread">
 			<a class="btn" href="/rsvp">RSVP</a>
+			<a class="btn secondary" href="/whale-watching">Whale Watch</a>
 			{#if hasPermission('registrations:read')}
 				<a class="btn secondary" href="/registrations">Review registrations</a>
 			{/if}
