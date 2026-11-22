@@ -16,18 +16,20 @@ on the boat.
 ## Flow
 
 1. An approved guest's landing card offers **RSVP** as its primary action
-   (a secondary button offers the [Whale watch](/whale-watch.md) page) —
-   it replaced the old "See the photos" card link (Photos stays in the
-   nav). The link goes to `/rsvp`.
+   — it replaced the old "See the photos" card link (Photos stays in the
+   nav; the [Whale watch](/whale-watch.md) page is reachable from the nav
+   and from the RSVP page's own copy). The link goes to `/rsvp`.
 2. The page is approval-gated like all guest content: `pending` and
    `rejected` guests see their usual state screens, anonymous visitors a
    sign-in prompt; only `approved` guests see the form (see [Access by
    approval status](/access-by-approval-status.md)).
-3. The form is two number fields — "Wedding (Sat, June 19) — how many of
-   you are coming?" and "Whale watch (Fri, June 18) — how many of you are
-   coming?" — each pre-filled from the guest's saved count (empty while
-   still null), plus a note that guests may register separately but mustn't
-   double-count themselves. Saving self-PATCHes `party_size` and
+3. The page's intro line invites guests to the whale watch the day
+   before, linking "whale watch" to the [Whale watch](/whale-watch.md)
+   page. The form is two number fields — "Wedding (Sat, June 19) — how
+   many of you are coming?" and "Whale watch (Fri, June 18) — how many of
+   you are coming?" — each pre-filled from the guest's saved count (empty
+   while still null), plus a note that guests may register separately but
+   mustn't double-count themselves. Saving self-PATCHes `party_size` and
    `whale_watch_party_size` on the guest's own `users` row in one write
    and shows a thank-you note.
 4. Saving again updates the numbers (both fields pre-fill on every load);

@@ -49,9 +49,7 @@ async function signIn(page: Page, email: string): Promise<void> {
 }
 
 test.describe('rsvp', () => {
-	test('the landing page links to the rsvp page and the whale watch page', async ({
-		page
-	}) => {
+	test('the landing page links to the rsvp page', async ({ page }) => {
 		await signIn(page, GUEST_EMAIL);
 		await expect(page.getByRole('heading', { name: /welcome, local guest/i })).toBeVisible();
 
@@ -61,10 +59,8 @@ test.describe('rsvp', () => {
 		await expect(rsvp).toHaveAttribute('href', '/rsvp');
 		// …the old "See the photos" card link is gone…
 		await expect(page.getByRole('link', { name: /see the photos/i })).toHaveCount(0);
-		// …and the card also offers the whale watch page.
-		const whale = page.locator('.card').getByRole('link', { name: /whale watch/i });
-		await expect(whale).toBeVisible();
-		await expect(whale).toHaveAttribute('href', '/whale-watching');
+		// …and the card offers no whale watch link — that page is nav-only.
+		await expect(page.locator('.card').getByRole('link', { name: /whale watch/i })).toHaveCount(0);
 		// Photos and Whale Watch both stay in the nav.
 		await expect(page.getByRole('navigation').getByRole('link', { name: 'Photos' })).toBeVisible();
 		await expect(

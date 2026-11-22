@@ -22,9 +22,9 @@ there.
    approved guests, next to "Photos".
 2. The guide is Morgan's "Things to Do in Juneau (Like a Local on a
    Budget)" email, formatted: intro paragraphs, a caveat note, a
-   "Take a hike!" section, and the main list (bold lead-ins, nested
-   sub-lists for beaches, campgrounds, and museums, the NOAA tide-chart
-   link).
+   "Take a hike!" section (the trails list), an "Other activities"
+   heading, and the main list (bold lead-ins, nested sub-lists for
+   beaches, campgrounds, and museums, the NOAA tide-chart link).
 3. Below the guide, the 2019 "Travel Juneau" map is embedded in an
    `<iframe>` and offered for download (`download` attribute) — both
    from the same static asset, `static/juneau-map.pdf`.

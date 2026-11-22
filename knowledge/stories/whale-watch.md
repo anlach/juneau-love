@@ -18,9 +18,9 @@ generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-15T22:40:00Z }
    anonymous → sign-in card, pending/rejected → the
    [Access by approval status](/access-by-approval-status.md) screens,
    approved → the plan. The header nav shows a "Whale Watch" link for
-   approved guests (between "Photos" and "Things to Do"), and the
-   approved guest's landing card offers a "Whale Watch" secondary button
-   next to the RSVP primary.
+   approved guests (between "Photos" and "Things to Do"); the landing
+   card offers no button for it — it is also linked from the RSVP page's
+   intro line.
 2. The page is intentionally thin: the date ("Friday, June 18, 2027 · the
    day before"), the plan as three bullets (2:45 PM meet at Statter
    Harbor, 3:00 PM departure, 6:00 PM back at Statter Harbor), a note
@@ -32,8 +32,8 @@ generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-15T22:40:00Z }
 
 - [ ] Anonymous and pending/rejected visitors never see the plan (e2e:
       `e2e/whale-watching.spec.ts`).
-- [ ] An approved guest reaches the page from the nav and the landing
-      card; the date, the three plan bullets, the Statter Harbor
+- [ ] An approved guest reaches the page from the nav (and the RSVP
+      page's link); the date, the three plan bullets, the Statter Harbor
       locations, and the up-to-120 note render, and the RSVP button links
       to `/rsvp` (e2e: `e2e/whale-watching.spec.ts`).
 - [ ] The page carries no user-specific or approval-specific data — the
