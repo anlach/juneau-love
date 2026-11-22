@@ -15,7 +15,7 @@ over-permissioning.
 ## The request
 
 ```
-GET /rest/v1/users?id=eq.<uid>&select=id,email,display_name,status,email_confirmed_at,admin_notified_at,party_size,roles!user_roles(role_id.fk.users.id,name)
+GET /rest/v1/users?id=eq.<uid>&select=id,email,display_name,status,email_confirmed_at,admin_notified_at,party_size,whale_watch_party_size,roles!user_roles(role_id.fk.users.id,name)
 Authorization: Bearer <user JWT>
 ```
 
@@ -34,7 +34,8 @@ layout never sends the row back to the server.)
   "status":    'pending' | 'approved' | 'rejected',
   "email_confirmed_at": string | null,
   "admin_notified_at": string | null,  // set when the admins were alerted about this registration
-  "party_size": number | null,  // the RSVP number; null until the guest has rsvp'd
+  "party_size": number | null,  // the wedding RSVP count; null until the guest has rsvp'd
+  "whale_watch_party_size": number | null,  // the whale-watch RSVP count; same rules
   "roles":     [{ name: 'guest' | 'admin' }, ...]
 }
 ```

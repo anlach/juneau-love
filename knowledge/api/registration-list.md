@@ -1,7 +1,7 @@
 ---
 type: api-endpoint
 title: List registrations (admin)
-description: PostgREST read of all users rows that feeds the admin registrations table — display name, email, verified indicator, registration date, party size (RSVP), approval state, newest first.
+description: PostgREST read of all users rows that feeds the admin registrations table — display name, email, verified indicator, registration date, wedding and whale-watch RSVP counts, approval state, newest first.
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-01T16:33:44Z }
 ---
 
@@ -15,7 +15,7 @@ registrations](../stories/review-registrations.md)).
 ```js
 // all registrations, newest first
 supabase.from('users')
-  .select('id, email, display_name, email_confirmed_at, status, party_size, created_at')
+  .select('id, email, display_name, email_confirmed_at, status, party_size, whale_watch_party_size, created_at')
   .order('created_at', { ascending: false });
 
 // optional pending-only filter
@@ -36,16 +36,18 @@ supabase.from('users')
 ## Expectations
 
 - **Result:** `Array<{ id, email, display_name, email_confirmed_at,
-  status, party_size, created_at }>`; `status ∈ { pending, approved,
-  rejected }`; `party_size` is `number | null`. `email_confirmed_at ===
-  null` means the guest has not clicked the confirmation link yet — the FE
-  renders a "not verified" state and keeps the Approve action unavailable
-  (the function enforces the same rule). `party_size === null` means the
-  guest hasn't rsvp'd — the Party column renders an em dash.
-- **Expected headcount:** the page also shows the sum of `party_size` over
-  **approved** rows, with a null party size counting for 0 — the hosts'
-  attendance total (the rule and the story live in [Review
-  registrations](../stories/review-registrations.md)).
+  status, party_size, whale_watch_party_size, created_at }>`; `status ∈
+  { pending, approved, rejected }`; both RSVP counts are `number | null`.
+  `email_confirmed_at === null` means the guest has not clicked the
+  confirmation link yet — the FE renders a "not verified" state and keeps
+  the Approve action unavailable (the function enforces the same rule).
+  A count of `null` means the guest hasn't rsvp'd — the Wedding and Whale
+  columns each render an em dash.
+- **Expected headcount, per event:** the page also shows the sum of
+  `party_size` (wedding) and of `whale_watch_party_size` (whale watch)
+  over **approved** rows, each with a null count counting for 0 — the
+  hosts' per-event attendance totals (the rule and the story live in
+  [Review registrations](../stories/review-registrations.md)).
 - **Ordering:** `created_at` descending (most recent registration first).
 - **Freshness:** the FE re-fetches after every approve/reject
   ([registration-decision](/registration-decision.md)) and on page

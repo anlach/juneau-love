@@ -135,8 +135,10 @@ export interface UserRow {
 	email_confirmed_at: string | null;
 	/** Set by notify-registration when the admins were alerted (null until then). */
 	admin_notified_at: string | null;
-	/** Party size from the guest's RSVP (null until they've rsvp'd). */
+	/** Wedding party size from the guest's RSVP (null until they've rsvp'd). */
 	party_size: number | null;
+	/** Whale-watch party size from the guest's RSVP (null until they've rsvp'd). */
+	whale_watch_party_size: number | null;
 }
 
 function restHeaders() {
@@ -188,15 +190,22 @@ export async function setUserStatus(email: string, status: 'approved' | 'rejecte
 		throw new Error(`status update failed: ${res.status} ${await res.text()}`);
 }
 
-/** Sum of party_size over approved users (service role) — the headcount the
- * registrations page totals. */
-export async function getApprovedPartyTotal(): Promise<number> {
-	const res = await fetch(`${REST_URL}/users?status=eq.approved&select=party_size`, {
-		headers: restHeaders()
-	});
+/** Sums of the two RSVP counts over approved users (service role) — the
+ * per-event headcounts the registrations page totals (null counts as 0). */
+export async function getApprovedTotals(): Promise<{ wedding: number; whale: number }> {
+	const res = await fetch(
+		`${REST_URL}/users?status=eq.approved&select=party_size,whale_watch_party_size`,
+		{ headers: restHeaders() }
+	);
 	if (!res.ok) throw new Error(`users read failed: ${res.status} ${await res.text()}`);
-	const rows = (await res.json()) as Array<{ party_size: number | null }>;
-	return rows.reduce((sum, r) => sum + (r.party_size ?? 0), 0);
+	const rows = (await res.json()) as Array<{
+		party_size: number | null;
+		whale_watch_party_size: number | null;
+	}>;
+	return {
+		wedding: rows.reduce((s, r) => s + (r.party_size ?? 0), 0),
+		whale: rows.reduce((s, r) => s + (r.whale_watch_party_size ?? 0), 0)
+	};
 }
 
 /** Read a user's asset rows (service role, bypasses RLS). */
