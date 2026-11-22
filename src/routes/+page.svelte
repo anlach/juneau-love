@@ -29,8 +29,8 @@
 			class="collage"
 			src="/images/collage.webp"
 			alt="Morgan and Andrew in a collage of their photoshoot"
-			width="810"
-			height="770"
+			width="563"
+			height="597"
 		/>
 	</div>
 {:else if status === 'pending'}

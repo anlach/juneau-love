@@ -22,16 +22,16 @@ where](/prerender.md)):
 
 Underneath the welcome/RSVP card in the approved variant:
 
-- Committed static asset `static/images/collage.webp` (810×770) — **not**
+- Committed static asset `static/images/collage.webp` (563×597) — **not**
   Supabase storage: a decorative site asset needs no presign/RLS
   machinery, same pattern as `static/juneau-map.pdf` on the things-to-do
   page ([Shared components](/components.md#things-to-do-page--things-to-do)).
-  Stored as WebP, the site's image format (1 MB PNG source → ~136 KB),
+  Stored as WebP, the site's image format (422 KB PNG source → ~48 KB),
   consistent with [Gallery thumbnail rendering](/gallery-thumbnails.md).
-- Layout: centered, shown at its **natural 810×770 size — no
+- Layout: centered, shown at its **natural 563×597 size — no
   `max-width`, no scaling** (the image is never resized). It sits in a
   centered flex row (`.collage-row`, `justify-content: center`), so on
-  viewports narrower than 810px it overflows `.frame` **equally on both
+  viewports narrower than 563px it overflows `.frame` **equally on both
   sides** instead of shrinking — the outer slivers are then unreachable
   by horizontal scrolling; accepted. 12px radius to match the card
   corners.
