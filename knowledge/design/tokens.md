@@ -45,6 +45,7 @@ on hue.
 | `--badge-pending-text` | color | Pending badge text |
 | `--selection-bg` / `--selection-text` | color | `::selection` |
 | `--glow` | color | Top-of-page radial wash, gallery placeholder hatch, landing kicker color |
+| `--tree-left-back`, `--tree-left-front`, `--tree-right` | color | Background tree silhouettes in the bottom corners ([Background trees](/trees.md)) |
 | `--input-border` | color | Text-field border (functional borders stay) |
 | `--table-border` | color | Table header rule and row hairlines (one token, both rules) |
 | `--link-hover-mix-with`, `--btn-primary-hover-mix-with`, `--btn-secondary-hover-mix-with`, `--btn-danger-hover-mix-with`, `--menu-hover-mix-with` | color | The color each hover mixes toward |

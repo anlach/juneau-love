@@ -5,6 +5,7 @@
 
 # design-decision
 
+* [Background tree silhouettes](trees.md) - Three tree silhouettes from a linocut sheet sit behind the content in the bottom corners of every page (two left, one right). Each is a horizontal slice of a tree — right 60% for the left front tree, right 50% for the left back, left 48% for the right — with the bottom quarter cut away, so trunk bases are never on screen; each tree's color is a base control on the /theme page.
 * [Gallery thumbnail rendering](gallery-thumbnails.md) - The gallery grid shows the client-generated WebP thumbnail at its natural aspect ratio — width-constrained, never cropped or stretched — in a box that hugs the thumbnail and centers vertically in its row; 'opening an image' is a plain link that opens the full-size original in a new tab. Rows without a thumbnail fall back to the full-size URL.
 * [Theme customization (admin theme page)](theme-customization.md) - The /theme page: every base color and mix percentage in [Design tokens](/tokens.md) is a control (color pickers + % inputs) with a live preview pane of the real components, static hover twins, and a WCAG contrast check. FE-only for now — the theme saves to localStorage and is per-browser; the page is intentionally ungated for the time being.
 * [What renders where (prerendered vs client-rendered)](prerender.md) - Only the public landing / is prerendered; every session- or status-dependent route is client-rendered behind the adapter-static SPA fallback (404.html), so no user-specific data ever reaches prerendered HTML.

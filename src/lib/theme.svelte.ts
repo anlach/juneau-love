@@ -29,6 +29,10 @@ export const THEME_VARS = {
 	'glow-alpha': { var: '--glow-alpha', kind: 'number', def: 15 },
 	'selection-bg': { var: '--selection-bg', kind: 'color', def: '#5d9b8e' },
 	'selection-text': { var: '--selection-text', kind: 'color', def: '#17263f' },
+	// Background tree silhouettes (src/lib/components/TreesBackground.svelte)
+	'tree-left-back': { var: '--tree-left-back', kind: 'color', def: '#17323f' },
+	'tree-left-front': { var: '--tree-left-front', kind: 'color', def: '#0d2a2b' },
+	'tree-right': { var: '--tree-right', kind: 'color', def: '#0a1a0c' },
 	// Text
 	text: { var: '--text', kind: 'color', def: '#ccbdef' },
 	'muted-mix': { var: '--muted-mix', kind: 'number', def: 25 },
