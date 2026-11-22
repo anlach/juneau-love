@@ -9,6 +9,7 @@
 	import { supabase } from '#lib/supabase';
 	import { auth, hasPermission, initAuth, signOut } from '#lib/session.svelte.ts';
 	import { initTheme } from '#lib/theme.svelte.ts';
+	import TreesBackground from '#lib/components/TreesBackground.svelte';
 
 	let { children } = $props();
 
@@ -105,6 +106,8 @@
 		href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💍%3C/text%3E%3C/svg%3E"
 	/>
 </svelte:head>
+
+<TreesBackground />
 
 <header class="site-header frame">
 	<a class="brand display" href="/">juneau<span class="dot">.</span>love</a>

@@ -32,7 +32,7 @@ each `max-height: calc(50vh - 1rem)` and scrolling inside its half) so the
 preview stays visible while editing. A wider two-column split at phone
 widths would squash the preview into an unusable sliver.
 
-- **Left — controls.** Grouped sections (Page, Text, Surfaces, Links &
+- **Left — controls.** Grouped sections (Page, Trees, Text, Surfaces, Links &
   focus, Primary button, Secondary button, Danger button, Inputs & table,
   Feedback & badges, Menu). Each row is a label + a native
   `<input type="color">` (with the hex echoed next to it) or a 0–100 number

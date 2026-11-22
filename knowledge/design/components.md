@@ -33,6 +33,9 @@ customization](/theme-customization.md).
     bare-button behaviour). The menu closes on outside click, Escape, and
     item click ([Change display name](../stories/change-display-name.md))
 - The root layout also owns `initAuth()` on mount and the favicon.
+- `<TreesBackground />` renders the three background tree silhouettes behind
+  everything (fixed layer, `z-index: -1`) on all pages — see [Background tree
+  silhouettes](/trees.md).
 
 ## Building blocks
 

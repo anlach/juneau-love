@@ -43,6 +43,10 @@
 	--glow: #5d9b8e;
 	--input-border: #54697a;
 	--table-border: #4f5c8b;
+	/* Background tree silhouettes (src/lib/components/TreesBackground.svelte). */
+	--tree-left-back: #17323f;
+	--tree-left-front: #0d2a2b;
+	--tree-right: #0a1a0c;
 	/* Colors each hover mixes toward. */
 	--link-hover-mix-with: #123514;
 	--btn-primary-hover-mix-with: #2a406e;

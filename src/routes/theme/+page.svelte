@@ -31,6 +31,14 @@
 			],
 		},
 		{
+			title: 'Trees',
+			rows: [
+				{ key: 'tree-left-back', label: 'Left, back' },
+				{ key: 'tree-left-front', label: 'Left, front' },
+				{ key: 'tree-right', label: 'Right' },
+			],
+		},
+		{
 			title: 'Text',
 			rows: [
 				{ key: 'text', label: 'Body text' },
@@ -354,7 +362,10 @@
 				</li>
 			{/each}
 		</ul>
-		<p class="pv-note">The page glow and the background around this pane are the page itself — live too.</p>
+		<p class="pv-note">
+			The page glow, the background around this pane, and the tree silhouettes in the
+			corners are the page itself — live too.
+		</p>
 	</section>
 </div>
 
