@@ -78,6 +78,12 @@ test.describe('approved guest', () => {
 		// The guide content renders: a trail, a museum, and the tide chart link.
 		await expect(page.getByText('Nugget Falls Trail')).toBeVisible();
 		await expect(page.getByText('Sealaska Heritage Institute')).toBeVisible();
+		// The non-hike activities sit under their own section heading.
+		await expect(page.locator('.guide h2')).toHaveText([
+			'Take a hike!',
+			'Other activities',
+			'The map'
+		]);
 		await expect(
 			page.locator(
 				'a[href="https://tidesandcurrents.noaa.gov/stationhome.html?id=9452210"]'

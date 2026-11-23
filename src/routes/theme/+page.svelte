@@ -177,11 +177,6 @@
 </svelte:head>
 
 <h1 class="display" style="font-size: 2.6rem">Theme</h1>
-<p class="sub">
-	Every color the site uses, named by what it does. Changes apply live and save to this
-	browser automatically — the site is themed per browser, so guests see the shipped
-	defaults until you wire this up to a shared store.
-</p>
 
 <div class="theme-page">
 	<section class="controls" aria-label="Theme controls">

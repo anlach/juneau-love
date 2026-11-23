@@ -106,6 +106,7 @@
 			</li>
 		</ul>
 
+		<h2>Other activities</h2>
 		<ul>
 			<li>
 				<strong>Drive the roads</strong> (if you are renting a vehicle). Egan Drive from

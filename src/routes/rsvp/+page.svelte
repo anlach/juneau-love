@@ -106,7 +106,7 @@
 		<h2 class="display" style="font-size: 2rem">RSVP</h2>
 		<p class="sub">
 			Let us know how many of you are coming to the wedding — and how many would like to
-			join us for the whale watch the day before.
+			join us for the <a href="/whale-watching">whale watch</a> the day before.
 		</p>
 		<!-- novalidate: the app shows its own range message; without this
 		     the browser's constraint validation could swallow the submit. -->

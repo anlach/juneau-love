@@ -1,7 +1,7 @@
 ---
 type: design-decision
 title: Landing page (variants and photoshoot collage)
-description: "The / page renders one of four variants by session state — public invitation hero (the prerendered one), the approved welcome/RSVP card with the photoshoot collage underneath, and the shared StateScreen screens. The collage is a committed static WebP shown at its natural size (overflow accepted on narrow screens)."
+description: "The / page renders one of four variants by session state — public invitation hero (the prerendered one), the approved welcome/RSVP card with the photoshoot collage underneath, and the shared StateScreen screens. The collage is a committed static WebP that scales down to fit the page width on narrow screens."
 generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-03T04:11:46Z }
 ---
 
@@ -28,13 +28,11 @@ Underneath the welcome/RSVP card in the approved variant:
   page ([Shared components](/components.md#things-to-do-page--things-to-do)).
   Stored as WebP, the site's image format (422 KB PNG source → ~48 KB),
   consistent with [Gallery thumbnail rendering](/gallery-thumbnails.md).
-- Layout: centered, shown at its **natural 563×597 size — no
-  `max-width`, no scaling** (the image is never resized). It sits in a
-  centered flex row (`.collage-row`, `justify-content: center`), so on
-  viewports narrower than 563px it overflows `.frame` **equally on both
-  sides** instead of shrinking — the outer slivers are then unreachable
-  by horizontal scrolling; accepted. 12px radius to match the card
-  corners.
+- Layout: centered in a flex row (`.collage-row`,
+  `justify-content: center`), shown at its natural 563×597 size but
+  capped by `max-width: 100%` + `height: auto` — on viewports narrower
+  than 563px it scales down proportionally to fit the frame instead of
+  overflowing. 12px radius to match the card corners.
 - It is content, not decoration: alt text describes the couple
   ("Morgan and Andrew in a collage of their photoshoot"), and explicit
   `width`/`height` attributes keep the layout stable while it loads.

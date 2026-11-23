@@ -18,7 +18,6 @@
 		<h2 class="display" style="font-size: 2.2rem">Welcome, {name}</h2>
 		<div class="spread">
 			<a class="btn" href="/rsvp">RSVP</a>
-			<a class="btn secondary" href="/whale-watching">Whale Watch</a>
 			{#if hasPermission('registrations:read')}
 				<a class="btn secondary" href="/registrations">Review registrations</a>
 			{/if}
@@ -62,6 +61,8 @@
 	}
 	.collage {
 		border-radius: 12px;
+		max-width: 100%;
+		height: auto;
 	}
 	.hero {
 		padding: 4rem 0 2rem;
