@@ -2,7 +2,7 @@
 type: design-decision
 title: What renders where (prerendered vs client-rendered)
 description: "Only the public landing / is prerendered; every session- or status-dependent route is client-rendered behind the adapter-static SPA fallback (404.html), so no user-specific data ever reaches prerendered HTML."
-generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-10-19T04:46:00Z }
+generated: { by: pi/Qwen3.8-27B-TEE, at: 2026-11-23T02:29:10Z }
 ---
 
 # What renders where
@@ -15,7 +15,7 @@ the render mode of every route, and the decision rule is:
 
 | Route | Mode | Why |
 |---|---|---|
-| `/` | **prerendered** (`prerender = true` in `src/routes/+page.ts`) | The public invitation; the signed-in variants of it hydrate in place after the client-side auth check |
+| `/` | **prerendered** (`prerender = true` in `src/routes/+page.ts`) | The landing's neutral "Loading…" line ([Landing page](/landing.md)); the real variant — public invitation or a signed-in screen — paints client-side once the session check resolves |
 | `/login`, `/register`, `/auth/confirm` | client (`ssr = false`) | Session-dependent (fragment session exchange, "already signed in" state) |
 | `/gallery` | client (`ssr = false`) | Gated on `status = 'approved'` |
 | `/things-to-do` | client (`ssr = false`) | Gated on `status = 'approved'` |
@@ -31,10 +31,16 @@ the render mode of every route, and the decision rule is:
 - `+layout.ts` has no global prerender flag; the per-route `prerender` /
   `ssr` settings above are the whole of the render configuration.
 - Session state resolves client-side after hydration (`initAuth()` in the
-  root layout — [Client authentication](../api/client-auth.md)), so a
-  returning signed-in visitor briefly sees the anonymous shell before the
-  real screen. Accepted: it is one script round-trip, and it is what keeps
-  the prerendered HTML free of personal data.
+  root layout — [Client authentication](../api/client-auth.md)). The
+  prerendered landing shell is therefore its **loading line, not the
+  public invitation** ([Landing page](/landing.md)): a returning signed-in
+  visitor sees a neutral "Loading…" for the duration of the session +
+  state fetch, then their real screen — the "You're invited" hero never
+  flashes first. Consequences, accepted: a no-JS visitor sees "Loading…"
+  indefinitely (they cannot register or sign in without JS anyway), and
+  anonymous visitors' hero paints one round-trip later than it would if
+  it were the prerendered shell. Either way the prerendered HTML stays
+  free of personal data.
 
 ## Consequences
 

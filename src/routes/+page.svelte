@@ -13,7 +13,14 @@
 	<title>juneau.love — you’re invited</title>
 </svelte:head>
 
-{#if status === 'approved'}
+{#if auth.kind === 'loading'}
+	<!-- Session (and with it the approval state) is still resolving. Hold
+	     the public invitation back until we know this isn't a returning
+	     signed-in guest, so "You're invited" never flashes before the
+	     welcome card. This branch is also what prerendering emits —
+	     see knowledge/design/prerender.md. -->
+	<p class="sub center" style="padding: 4rem 0 2rem">Loading…</p>
+{:else if status === 'approved'}
 	<div class="card center">
 		<h2 class="display" style="font-size: 2.2rem">Welcome, {name}</h2>
 		<div class="spread">
@@ -39,7 +46,7 @@
 {:else if auth.kind === 'error'}
 	<StateScreen status="error" message={auth.message} />
 {:else}
-	<!-- anonymous (and during the initial client-side check): public invitation -->
+	<!-- anonymous: public invitation -->
 	<section class="hero center">
 		<p class="kicker">morgan &amp; andrew</p>
 		<h1 class="display" style="font-size: 4.5rem; margin: 0.2rem 0">You’re invited</h1>

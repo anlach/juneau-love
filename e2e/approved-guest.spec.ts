@@ -54,6 +54,41 @@ test.describe('approved guest', () => {
 		await expect(page.getByRole('navigation').getByRole('link', { name: 'Registrations' })).toHaveCount(0);
 	});
 
+	test('a returning signed-in guest loads the welcome without an invitation flash', async ({
+		page
+	}) => {
+		// The prerendered / shell shows a neutral “Loading…” line, not the
+		// public invitation, so a guest with a persisted session must never
+		// see “You’re invited” enter the DOM — even for one frame — before
+		// their welcome card (knowledge/design/landing.md).
+		await page.addInitScript(() => {
+			const w = window as unknown as { __heroSeen: boolean };
+			w.__heroSeen = false;
+			const mark = () => {
+				for (const h of document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+					if (/invited/i.test(h.textContent ?? '')) w.__heroSeen = true;
+			};
+			mark();
+			new MutationObserver(mark).observe(document.documentElement, {
+				subtree: true,
+				childList: true,
+				characterData: true
+			});
+		});
+
+		// Establish the session (persists to localStorage), then load / as a
+		// fresh document — the returning-visitor path the prerendered shell
+		// serves.
+		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
+		await expect(page.getByRole('heading', { name: /welcome, local guest/i })).toBeVisible();
+
+		await page.goto('/', { waitUntil: 'domcontentloaded' });
+		await expect(page.getByRole('heading', { name: /welcome, local guest/i })).toBeVisible();
+		expect(
+			await page.evaluate(() => (window as unknown as { __heroSeen: boolean }).__heroSeen)
+		).toBe(false);
+	});
+
 	test('approved guest can open the gallery', async ({ page }) => {
 		await openAuthLink(page, GUEST_EMAIL, 'magiclink');
 		await expect(page).toHaveURL('/');
